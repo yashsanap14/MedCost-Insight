@@ -1,0 +1,21 @@
+code,description,category,typical_use
+99281,ER visit - minimal complexity,facility,Minor injury or illness
+99282,ER visit - low complexity,facility,Simple laceration or sprain
+99283,ER visit - moderate complexity,facility,Moderate injury requiring imaging
+99284,ER visit - high complexity,facility,Severe injury or acute illness
+99285,ER visit - very high complexity,facility,Life-threatening emergency
+70450,CT head/brain without contrast,imaging,Head injury evaluation
+70486,CT face without contrast,imaging,Facial trauma
+71045,Chest X-ray - single view,imaging,Respiratory symptoms
+71046,Chest X-ray - 2 views,imaging,Chest pain or trauma
+73610,Ankle X-ray - 3+ views,imaging,Ankle injury
+85025,Complete Blood Count (CBC) with differential,lab,Infection or anemia workup
+80053,Comprehensive Metabolic Panel (CMP),lab,General health assessment
+81001,Urinalysis - automated,lab,Urinary symptoms
+82947,Glucose - blood quantitative,lab,Diabetes or altered mental status
+85610,Prothrombin time (PT),lab,Bleeding or anticoagulation monitoring
+12001,Simple repair - superficial wound,procedure,Laceration repair
+29125,Application of short arm splint,procedure,Wrist or hand injury
+36415,Routine venipuncture,procedure,Blood draw for lab tests
+96372,Injection - subcutaneous/intramuscular,procedure,Medication administration
+94640,Nebulizer treatment,procedure,Asthma or respiratory distress

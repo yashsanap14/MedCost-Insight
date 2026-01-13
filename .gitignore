@@ -1,0 +1,35 @@
+# Data files
+data/raw/*
+data/processed/*
+data/benchmarks/*
+!data/reference/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Power BI
+*.pbix.tmp
+*.pbix~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
