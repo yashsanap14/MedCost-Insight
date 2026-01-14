@@ -217,32 +217,6 @@ open powerbi/ER_Bill_Explainer.pbix
 
 ---
 
-## Resume Bullets
-
-- Built a **Power BI "ER Bill Explainer" dashboard** using hospital price transparency files and CMS benchmarks to compare gross charges vs estimated allowed amounts and patient responsibility
-- Modeled **healthcare cost drivers** across facility, lab, and professional services using Medicare fee schedule benchmarks (PFS/CLFS) and scenario-based out-of-pocket estimation
-- Developed **reusable ETL pipelines in Python** to normalize machine-readable hospital pricing files into an analytics-ready star schema for interactive reporting
-
----
-
-## Next Steps
-
-1. ✅ Set up project structure
-2. ⏳ Download Inova MRF and CMS datasets
-3. ⏳ Build ETL pipeline
-4. ⏳ Create Power BI data model
-5. ⏳ Design dashboard pages
-6. ⏳ Package for portfolio
-
----
-
-## Contact
-
-**Project Author**: [Your Name]  
-**LinkedIn**: [Your LinkedIn]  
-**Portfolio**: [Your Portfolio URL]
-
----
 
 ## License
 
