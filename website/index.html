@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ER Bill Explainer — Understand your emergency room bill, compare prices, simulate insurance plans, and detect overcharges with AI-powered insights.">
+  <title>ER Bill Explainer — Healthcare Price Transparency</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- Header -->
+    <header class="header">
+      <h1>🏥 ER Bill Explainer</h1>
+      <p class="subtitle">Healthcare Price Transparency — Powered by Real Hospital Data</p>
+      <div class="badge-row">
+        <span class="badge">📊 20 ER Services</span>
+        <span class="badge">🏛️ Inova Alexandria Hospital</span>
+        <span class="badge">💡 CMS Medicare Benchmarks</span>
+      </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-bar" id="tab-bar">
+      <button class="tab-btn active" data-tab="bill-explained">📊 Bill Explained</button>
+      <button class="tab-btn" data-tab="cost-breakdown">📋 Cost Breakdown</button>
+      <button class="tab-btn" data-tab="price-comparison">📈 Price Comparison</button>
+      <button class="tab-btn" data-tab="insights">🔍 Insights</button>
+      <button class="tab-btn" data-tab="explain-bill">🧠 Explain My Bill</button>
+      <button class="tab-btn" data-tab="what-if">💰 What If Simulator</button>
+      <button class="tab-btn" data-tab="red-flags">🚩 Red Flags</button>
+    </nav>
+
+    <!-- Scenario Controls (visible on Bill Explained & What If) -->
+    <div class="controls-bar" id="scenario-controls">
+      <h3>⚙️ Patient Responsibility Scenario</h3>
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>ER Copay ($)</label>
+          <input type="range" id="copay-slider" min="0" max="500" step="50" value="250">
+          <div class="range-value" id="copay-value">$250</div>
+        </div>
+        <div class="control-group">
+          <label>Deductible Remaining ($)</label>
+          <input type="range" id="deductible-slider" min="0" max="5000" step="100" value="500">
+          <div class="range-value" id="deductible-value">$500</div>
+        </div>
+        <div class="control-group">
+          <label>Coinsurance (%)</label>
+          <input type="range" id="coinsurance-slider" min="0" max="50" step="5" value="20">
+          <div class="range-value" id="coinsurance-value">20%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 1: Bill Explained -->
+    <section class="tab-content active" id="tab-bill-explained">
+      <div class="kpi-grid" id="kpi-cards"></div>
+      <div class="chart-grid three-col">
+        <div class="chart-card" id="waterfall-chart"></div>
+        <div class="chart-card" id="pie-chart"></div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Cost Breakdown -->
+    <section class="tab-content" id="tab-cost-breakdown">
+      <div class="chart-grid two-col">
+        <div class="chart-card" id="variance-bar-chart"></div>
+        <div class="chart-card" id="category-bar-chart"></div>
+      </div>
+      <div class="chart-grid three-col">
+        <div class="chart-card" id="cumulative-chart"></div>
+        <div class="chart-card" id="category-pie-chart"></div>
+      </div>
+      <div class="glass-card mt-12">
+        <h3>📋 Detailed Service Comparison</h3>
+        <div class="data-table-wrapper" id="service-table-wrapper"></div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Price Comparison -->
+    <section class="tab-content" id="tab-price-comparison">
+      <div class="chart-grid single">
+        <div class="chart-card" id="scatter-chart"></div>
+      </div>
+      <div class="chart-grid two-col">
+        <div class="chart-card" id="histogram-chart"></div>
+        <div class="chart-card" id="box-chart"></div>
+      </div>
+      <div class="chart-grid single">
+        <div class="chart-card" id="service-count-chart"></div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Insights -->
+    <section class="tab-content" id="tab-insights">
+      <div id="insights-content"></div>
+    </section>
+
+    <!-- Tab 5: Explain My Bill (NEW) -->
+    <section class="tab-content" id="tab-explain-bill">
+      <div class="glass-card mb-24">
+        <h3>🧠 Select Services on Your Bill</h3>
+        <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
+          Check the services that appear on your ER bill. We'll generate a plain-English explanation for each one.
+        </p>
+        <div class="service-selector" id="service-selector"></div>
+        <button class="btn btn-primary mt-12" id="explain-btn" onclick="generateExplanations()">
+          Generate Bill Explanation
+        </button>
+      </div>
+      <div id="explanation-summary" class="hidden"></div>
+      <div id="explanation-cards"></div>
+    </section>
+
+    <!-- Tab 6: What If Simulator (NEW) -->
+    <section class="tab-content" id="tab-what-if">
+      <div class="glass-card mb-24">
+        <h3>💰 Choose a Plan to Compare</h3>
+        <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
+          Select a plan preset or customize parameters to see how your costs change.
+        </p>
+        <div class="plan-cards" id="plan-cards"></div>
+        <div class="controls-grid" style="margin-top: 20px;">
+          <div class="control-group">
+            <label>Deductible ($)</label>
+            <input type="range" id="wif-deductible" min="0" max="10000" step="250" value="4000">
+            <div class="range-value" id="wif-deductible-value">$4,000</div>
+          </div>
+          <div class="control-group">
+            <label>Coinsurance (%)</label>
+            <input type="range" id="wif-coinsurance" min="0" max="50" step="5" value="30">
+            <div class="range-value" id="wif-coinsurance-value">30%</div>
+          </div>
+          <div class="control-group">
+            <label>Copay ($)</label>
+            <input type="range" id="wif-copay" min="0" max="500" step="25" value="150">
+            <div class="range-value" id="wif-copay-value">$150</div>
+          </div>
+          <div class="control-group">
+            <label>OOP Maximum ($)</label>
+            <input type="range" id="wif-oopmax" min="1000" max="20000" step="500" value="9100">
+            <div class="range-value" id="wif-oopmax-value">$9,100</div>
+          </div>
+          <div class="control-group">
+            <label>Network</label>
+            <div class="toggle-container">
+              <span style="color: var(--text-secondary); font-size: 0.85rem;">In-Network</span>
+              <label class="toggle">
+                <input type="checkbox" id="wif-oon-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="color: var(--text-secondary); font-size: 0.85rem;">Out-of-Network</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="kpi-grid" id="wif-kpis"></div>
+      <div class="chart-grid two-col">
+        <div class="chart-card" id="wif-comparison-chart"></div>
+        <div class="chart-card" id="wif-gauge-chart"></div>
+      </div>
+      <div class="glass-card mt-12">
+        <h3>📊 Side-by-Side Plan Comparison</h3>
+        <div class="data-table-wrapper" id="wif-table-wrapper"></div>
+      </div>
+    </section>
+
+    <!-- Tab 7: Red Flags (NEW) -->
+    <section class="tab-content" id="tab-red-flags">
+      <div class="controls-bar">
+        <h3>🎚️ Detection Thresholds</h3>
+        <div class="controls-grid">
+          <div class="control-group">
+            <label>Medicare Multiplier Threshold</label>
+            <input type="range" id="rf-medicare-threshold" min="1" max="15" step="0.5" value="5">
+            <div class="range-value" id="rf-medicare-value">5.0x</div>
+          </div>
+          <div class="control-group">
+            <label>Negotiated Variance (%)</label>
+            <input type="range" id="rf-variance-threshold" min="50" max="500" step="25" value="200">
+            <div class="range-value" id="rf-variance-value">200%</div>
+          </div>
+        </div>
+      </div>
+      <div class="alert-banner" id="rf-alert-banner"></div>
+      <div id="rf-flag-cards"></div>
+      <div class="chart-grid single mt-12">
+        <div class="chart-card" id="rf-scatter-chart"></div>
+      </div>
+      <div class="glass-card mt-12">
+        <h3>📋 All Flagged Services</h3>
+        <div class="data-table-wrapper" id="rf-table-wrapper"></div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Data Sources:
+        <a href="https://www.inova.org/price-transparency" target="_blank">Inova Alexandria Hospital MRF</a> |
+        <a href="https://www.cms.gov" target="_blank">CMS Medicare Benchmarks</a>
+      </p>
+      <p style="margin-top: 6px;">ER Bill Explainer — Healthcare Price Transparency Dashboard</p>
+    </footer>
+
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
