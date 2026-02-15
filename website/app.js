@@ -1,889 +1,1089 @@
-// ER Bill Explainer — App Logic
-// All chart rendering, calculators, and interactive features
+// ER Bill Explainer — Consumer Healthcare Pricing Intelligence Platform
+// app.js — Main application logic
 
-const services = ER_DATA.services;
+const { services, planPresets, defaultThresholds, hospital, stateBenchmarks, nationalPercentiles } = ER_DATA;
 
-// ===== Theme Management =====
-function isDarkMode() {
-  return document.documentElement.getAttribute('data-theme') !== 'light';
-}
+// ===== Utility Functions =====
+const fmt = n => '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+const fmtDec = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct = n => n.toFixed(0) + '%';
 
-function getPlotlyLayout() {
-  const dark = isDarkMode();
-  return {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { color: dark ? '#94a3b8' : '#475569', family: 'Inter, sans-serif', size: 12 },
-    xaxis: {
-      gridcolor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)',
-      zerolinecolor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-    },
-    yaxis: {
-      gridcolor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)',
-      zerolinecolor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-    },
-    margin: { t: 50, r: 20, b: 50, l: 60 },
-    colorway: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#a855f7', '#ec4899', '#14b8a6']
-  };
-}
-
-// Keep backward-compatible reference
-let PLOTLY_DARK = getPlotlyLayout();
-
-function chartTitleColor() {
-  return isDarkMode() ? '#f1f5f9' : '#1e293b';
-}
-
-// Theme toggle
-function initTheme() {
-  const saved = localStorage.getItem('er-bill-theme');
+// ===== Theme Toggle =====
+function setupTheme() {
+  const toggle = document.getElementById('theme-toggle');
+  const saved = localStorage.getItem('theme');
+  // Default is dark theme (CSS :root = light, [data-theme=dark] = dark)
   if (saved === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-    document.getElementById('theme-toggle').textContent = '☀️';
+    document.documentElement.removeAttribute('data-theme');
+    toggle.textContent = '☀️';
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    toggle.textContent = '🌙';
   }
-  PLOTLY_DARK = getPlotlyLayout();
+  toggle.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      document.documentElement.removeAttribute('data-theme');
+      toggle.textContent = '☀️';
+      localStorage.setItem('theme', 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      toggle.textContent = '🌙';
+      localStorage.setItem('theme', 'dark');
+    }
+  });
 }
 
-document.getElementById('theme-toggle').addEventListener('click', () => {
-  const isCurrentlyDark = isDarkMode();
-  const newTheme = isCurrentlyDark ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', newTheme);
-  localStorage.setItem('er-bill-theme', newTheme);
-  document.getElementById('theme-toggle').textContent = isCurrentlyDark ? '☀️' : '🌙';
+// ===== Hero Counter Animation =====
+function animateCounters() {
+  const counters = [
+    { el: document.getElementById('hero-count-bills'), target: 50000, prefix: '', suffix: '+' },
+    { el: document.getElementById('hero-count-people'), target: 25000, prefix: '', suffix: '+' },
+    { el: document.getElementById('hero-count-saved'), target: 12, prefix: '$', suffix: 'M+' }
+  ];
+  const duration = 2000;
+  const steps = 60;
+  const interval = duration / steps;
 
-  // Update Plotly layout reference and re-render all charts
-  PLOTLY_DARK = getPlotlyLayout();
-  reRenderAllCharts();
-});
-
-function reRenderAllCharts() {
-  // Reset lazy-render flags so charts redraw with new theme
-  Object.keys(rendered).forEach(k => rendered[k] = false);
-
-  // Re-render the currently active tab
-  const activeBtn = document.querySelector('.tab-btn.active');
-  if (activeBtn) {
-    renderTab(activeBtn.dataset.tab);
-  }
+  counters.forEach(({ el, target, prefix, suffix }) => {
+    if (!el) return;
+    let current = 0;
+    const increment = target / steps;
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= target) {
+        current = target;
+        clearInterval(timer);
+      }
+      const display = target >= 1000
+        ? Math.floor(current).toLocaleString('en-US')
+        : Math.floor(current);
+      el.textContent = prefix + display + suffix;
+    }, interval);
+  });
 }
 
-// initTheme is called after 'rendered' is defined below
+// ===== Tab Navigation =====
+function setupTabs() {
+  const allLinks = document.querySelectorAll('[data-tab]');
+  const panels = document.querySelectorAll('.tab-panel');
+  const progressSteps = document.querySelectorAll('.progress-step');
 
-// ===== Tab Routing =====
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    const tabId = btn.dataset.tab;
-    document.getElementById('tab-' + tabId).classList.add('active');
+  allLinks.forEach(link => {
+    link.addEventListener('click', () => {
+      const tab = link.dataset.tab;
 
-    // Show/hide scenario controls
-    const showControls = ['bill-explained'].includes(tabId);
-    document.getElementById('scenario-controls').style.display = showControls ? 'block' : 'none';
+      // Update nav links
+      document.querySelectorAll('.nav-link, .mobile-nav-link').forEach(l => {
+        l.classList.toggle('active', l.dataset.tab === tab);
+        if (l.dataset.tab === tab) l.setAttribute('aria-current', 'page');
+        else l.removeAttribute('aria-current');
+      });
 
-    // Render tab content (lazy)
-    renderTab(tabId);
+      // Update panels
+      panels.forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
+
+      // Update progress steps
+      const tabOrder = ['dashboard', 'services', 'compare', 'simulator', 'action-plan'];
+      const currentIdx = tabOrder.indexOf(tab);
+      progressSteps.forEach(s => {
+        const stepIdx = tabOrder.indexOf(s.dataset.tab);
+        s.classList.toggle('active', stepIdx <= currentIdx);
+        s.classList.toggle('current', s.dataset.tab === tab);
+      });
+
+      // Close mobile nav
+      document.getElementById('mobile-nav-overlay').classList.remove('open');
+      document.getElementById('nav-hamburger').classList.remove('active');
+    });
   });
-});
 
-// ===== Scenario Sliders =====
-const sliderConfig = [
-  { id: 'copay-slider', display: 'copay-value', fmt: v => `$${v}` },
-  { id: 'deductible-slider', display: 'deductible-value', fmt: v => `$${v.toLocaleString()}` },
-  { id: 'coinsurance-slider', display: 'coinsurance-value', fmt: v => `${v}%` },
-];
-
-sliderConfig.forEach(({ id, display, fmt }) => {
-  const slider = document.getElementById(id);
-  const disp = document.getElementById(display);
-  slider.addEventListener('input', () => {
-    disp.textContent = fmt(Number(slider.value));
-    renderTab('bill-explained');
+  // Hamburger
+  document.getElementById('nav-hamburger').addEventListener('click', () => {
+    document.getElementById('mobile-nav-overlay').classList.toggle('open');
+    document.getElementById('nav-hamburger').classList.toggle('active');
   });
-});
 
-// What-If sliders
-const wifSliderConfig = [
-  { id: 'wif-deductible', display: 'wif-deductible-value', fmt: v => `$${v.toLocaleString()}` },
-  { id: 'wif-coinsurance', display: 'wif-coinsurance-value', fmt: v => `${v}%` },
-  { id: 'wif-copay', display: 'wif-copay-value', fmt: v => `$${v}` },
-  { id: 'wif-oopmax', display: 'wif-oopmax-value', fmt: v => `$${v.toLocaleString()}` },
-];
-
-wifSliderConfig.forEach(({ id, display, fmt }) => {
-  const slider = document.getElementById(id);
-  const disp = document.getElementById(display);
-  slider.addEventListener('input', () => {
-    disp.textContent = fmt(Number(slider.value));
-    renderWhatIf();
+  // Navbar scroll
+  window.addEventListener('scroll', () => {
+    document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 60);
   });
-});
-
-document.getElementById('wif-oon-toggle').addEventListener('change', renderWhatIf);
-
-// Red Flag sliders
-const rfSliderConfig = [
-  { id: 'rf-medicare-threshold', display: 'rf-medicare-value', fmt: v => `${v}x` },
-  { id: 'rf-variance-threshold', display: 'rf-variance-value', fmt: v => `${v}%` },
-];
-
-rfSliderConfig.forEach(({ id, display, fmt }) => {
-  const slider = document.getElementById(id);
-  const disp = document.getElementById(display);
-  slider.addEventListener('input', () => {
-    disp.textContent = fmt(Number(slider.value));
-    renderRedFlags();
-  });
-});
-
-// ===== Core Calculator =====
-function calcPatientOwes(allowedTotal, copay, deductible, coinsurancePct, oopMax = Infinity) {
-  const deductiblePart = Math.min(deductible, allowedTotal);
-  const afterDeductible = allowedTotal - deductiblePart;
-  const coinsurancePart = (coinsurancePct / 100) * afterDeductible;
-  const total = copay + deductiblePart + coinsurancePart;
-  return Math.min(total, oopMax);
 }
 
-function getScenarioValues() {
-  return {
-    copay: Number(document.getElementById('copay-slider').value),
-    deductible: Number(document.getElementById('deductible-slider').value),
-    coinsurance: Number(document.getElementById('coinsurance-slider').value),
+// ===== Computed Analytics =====
+function computeAnalytics() {
+  const analyzed = services.map(s => {
+    const markup = s.gross_charge / s.medicare_rate;
+    const stateMarkup = stateBenchmarks.byCpt[s.cpt] || markup;
+    const savings = s.gross_charge - s.medicare_rate;
+    let severity;
+    if (markup >= 15) severity = 'critical';
+    else if (markup >= 8) severity = 'high';
+    else if (markup >= 4) severity = 'moderate';
+    else severity = 'fair';
+    return { ...s, markup, stateMarkup, savings, severity };
+  }).sort((a, b) => b.markup - a.markup);
+
+  const totalCharged = analyzed.reduce((s, i) => s + i.gross_charge, 0);
+  const totalMedicare = analyzed.reduce((s, i) => s + i.medicare_rate, 0);
+  const avgMarkup = (totalCharged / totalMedicare).toFixed(1);
+  const overchargeCount = analyzed.filter(s => s.markup >= 8).length;
+  const negotiationScore = overchargeCount >= 5 ? 'strong' : overchargeCount >= 2 ? 'moderate' : 'low';
+
+  // Category breakdown
+  const categories = {};
+  analyzed.forEach(s => {
+    if (!categories[s.category]) categories[s.category] = { total: 0, count: 0, items: [] };
+    categories[s.category].total += s.gross_charge;
+    categories[s.category].count++;
+    categories[s.category].items.push(s);
+  });
+
+  // Markup distribution buckets
+  const buckets = { '1-3x': 0, '3-5x': 0, '5-10x': 0, '10-15x': 0, '15x+': 0 };
+  analyzed.forEach(s => {
+    if (s.markup >= 15) buckets['15x+']++;
+    else if (s.markup >= 10) buckets['10-15x']++;
+    else if (s.markup >= 5) buckets['5-10x']++;
+    else if (s.markup >= 3) buckets['3-5x']++;
+    else buckets['1-3x']++;
+  });
+
+  return { analyzed, analyzedByCost: [...analyzed].sort((a, b) => b.gross_charge - a.gross_charge), totalCharged, totalMedicare, avgMarkup, overchargeCount, negotiationScore, categories, buckets };
+}
+
+// ===== RENDER: Hero Stats =====
+// Hero now uses static social proof numbers (no dynamic rendering needed)
+
+// ===== RENDER: Dashboard — Negotiation Score =====
+function renderNegotiationScore(data) {
+  const { negotiationScore, overchargeCount, analyzed } = data;
+  const colors = { strong: '#ef4444', moderate: '#f59e0b', low: '#22c55e' };
+  const labels = { strong: 'Strong Negotiation Leverage', moderate: 'Moderate Leverage', low: 'Low Leverage — Fair Pricing' };
+  const icons = { strong: '🔴', moderate: '🟡', low: '🟢' };
+  const color = colors[negotiationScore];
+
+  const severeCount = analyzed.filter(s => s.markup >= 15).length;
+  const highCount = analyzed.filter(s => s.markup >= 8 && s.markup < 15).length;
+
+  document.getElementById('negotiation-score').innerHTML = `
+    <div class="neg-score-header" style="border-left:4px solid ${color}">
+      <div class="neg-score-icon">${icons[negotiationScore]}</div>
+      <div class="neg-score-info">
+        <h3> "Can I Negotiate This?" — <span style="color:${color}">${labels[negotiationScore]}</span></h3>
+        <p>${overchargeCount} of ${analyzed.length} services exceed 8x Medicare rate</p>
+      </div>
+    </div>
+    <div class="neg-score-details">
+      <div class="neg-detail ${severeCount > 0 ? 'critical' : ''}">
+        <span class="neg-count">${severeCount}</span>
+        <span class="neg-label">Critical (15x+)</span>
+      </div>
+      <div class="neg-detail ${highCount > 0 ? 'high' : ''}">
+        <span class="neg-count">${highCount}</span>
+        <span class="neg-label">High (8-15x)</span>
+      </div>
+      <div class="neg-detail">
+        <span class="neg-count">${analyzed.filter(s => s.markup >= 4 && s.markup < 8).length}</span>
+        <span class="neg-label">Moderate (4-8x)</span>
+      </div>
+      <div class="neg-detail">
+        <span class="neg-count">${analyzed.filter(s => s.markup < 4).length}</span>
+        <span class="neg-label">Fair (< 4x)</span>
+      </div>
+    </div>
+    <div class="neg-savings">
+      <span>💰 Potential Savings if Negotiated to Medicare Rates:</span>
+      <strong style="color:${color};font-size:1.3rem">${fmt(data.totalCharged - data.totalMedicare)}</strong>
+    </div>
+  `;
+}
+
+// ===== RENDER: Category Breakdown =====
+function renderCategoryBreakdown(data) {
+  const { categories, totalCharged } = data;
+  const catEntries = Object.entries(categories).sort((a, b) => b[1].total - a[1].total);
+  const catColors = { facility: '#6366f1', imaging: '#f59e0b', lab: '#22c55e', procedure: '#ef4444' };
+  const catIcons = { facility: '🏥', imaging: '📷', lab: '🧪', procedure: '💉' };
+  const nationalAvg = { facility: 45, imaging: 28, lab: 12, procedure: 15 };
+
+  // Top 2 categories insight
+  const top2 = catEntries.slice(0, 2);
+  const top2Pct = top2.reduce((s, [, d]) => s + d.total, 0) / totalCharged * 100;
+  const top2Names = top2.map(([cat]) => cat.charAt(0).toUpperCase() + cat.slice(1)).join(' and ');
+
+  document.getElementById('category-section').innerHTML = `
+    <div class="card-header">
+      <h3>📊 Where Your Money Goes</h3>
+      <p>Cost distribution by service category</p>
+    </div>
+    <div class="insight-box">
+      <span class="insight-pin">📌</span>
+      <span>${top2Names} charges make up <strong>${top2Pct.toFixed(0)}%</strong> of your total bill.</span>
+    </div>
+    <div class="category-donut-grid">
+      <div class="donut-chart-wrap">
+        <svg viewBox="0 0 200 200" class="donut-chart">
+          ${(() => {
+      let offset = 0;
+      const radius = 80, cx = 100, cy = 100, circ = 2 * Math.PI * radius;
+      return catEntries.map(([cat, d]) => {
+        const pct = d.total / totalCharged;
+        const dash = pct * circ;
+        const gap = circ - dash;
+        const el = `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="${catColors[cat] || '#94a3b8'}" stroke-width="24" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})" />`;
+        offset += dash;
+        return el;
+      }).join('');
+    })()}
+          <text x="100" y="95" text-anchor="middle" class="donut-total-label">Total</text>
+          <text x="100" y="118" text-anchor="middle" class="donut-total-value">${fmt(totalCharged)}</text>
+        </svg>
+      </div>
+      <div class="category-legend">
+        ${catEntries.map(([cat, d]) => {
+      const pctOfTotal = (d.total / totalCharged * 100).toFixed(0);
+      const natAvg = nationalAvg[cat];
+      return `
+          <div class="cat-legend-item">
+            <div class="cat-legend-top">
+              <span class="cat-legend-dot" style="background:${catColors[cat] || '#94a3b8'}"></span>
+              <span class="cat-legend-name">${catIcons[cat] || '📋'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
+              <span class="cat-legend-pct">${pctOfTotal}%</span>
+            </div>
+            <div class="cat-legend-meta">
+              ${fmt(d.total)} · ${d.count} service${d.count > 1 ? 's' : ''}${natAvg ? ` · <span class="cat-natl">Natl avg: ${natAvg}%</span>` : ''}
+            </div>
+          </div>`;
+    }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ===== RENDER: Top 5 Highest Cost Services =====
+function renderTopCostServices(data) {
+  const { analyzedByCost, totalCharged } = data;
+  const top5 = analyzedByCost.slice(0, 5);
+  const top3Total = analyzedByCost.slice(0, 3).reduce((s, i) => s + i.gross_charge, 0);
+  const top3Pct = (top3Total / totalCharged * 100).toFixed(0);
+  const maxCost = top5[0].gross_charge;
+
+  document.getElementById('top-cost-section').innerHTML = `
+    <div class="card-header">
+      <h3>💵 Top 5 Highest Cost Services</h3>
+      <p>Services contributing the most to your total bill</p>
+    </div>
+    <div class="insight-box">
+      <span class="insight-pin">📌</span>
+      <span>The top 3 services account for <strong>${top3Pct}%</strong> of your total ER bill.</span>
+    </div>
+    <div class="cost-rank-list">
+      ${top5.map((s, i) => {
+    const pctOfTotal = (s.gross_charge / totalCharged * 100).toFixed(1);
+    const barW = (s.gross_charge / maxCost * 100).toFixed(0);
+    return `
+        <div class="cost-rank-item">
+          <div class="cost-rank-num">${i + 1}</div>
+          <div class="cost-rank-body">
+            <div class="cost-rank-top">
+              <span class="cost-rank-name">${s.description}</span>
+              <span class="cost-rank-amount">${fmt(s.gross_charge)}</span>
+            </div>
+            <div class="cost-rank-bar-bg">
+              <div class="cost-rank-bar" style="width:${barW}%"></div>
+            </div>
+            <div class="cost-rank-meta">
+              <span>${pctOfTotal}% of total bill</span>
+              <span>Medicare: ${fmt(s.medicare_rate)}</span>
+            </div>
+          </div>
+        </div>`;
+  }).join('')}
+    </div>
+  `;
+}
+
+// ===== RENDER: Markup Distribution =====
+function renderMarkupDistribution(data) {
+  const { buckets, analyzed, avgMarkup } = data;
+  const maxBucket = Math.max(...Object.values(buckets));
+  const bucketColors = {
+    '1-3x': '#22c55e', '3-5x': '#84cc16', '5-10x': '#f59e0b', '10-15x': '#f97316', '15x+': '#ef4444'
   };
-}
+  const bucketLabels = {
+    '1-3x': 'Reasonable', '3-5x': 'Elevated', '5-10x': 'High', '10-15x': 'Very High', '15x+': 'Extreme'
+  };
+  const above5x = analyzed.filter(s => s.markup >= 5).length;
+  const above5xPct = (above5x / analyzed.length * 100).toFixed(0);
 
-// ===== Tab Renderer =====
-const rendered = {};
-initTheme();
-
-function renderTab(tabId) {
-  switch (tabId) {
-    case 'bill-explained': renderBillExplained(); break;
-    case 'cost-breakdown':
-      if (!rendered['cost-breakdown']) { renderCostBreakdown(); rendered['cost-breakdown'] = true; }
-      break;
-    case 'price-comparison':
-      if (!rendered['price-comparison']) { renderPriceComparison(); rendered['price-comparison'] = true; }
-      break;
-    case 'insights':
-      if (!rendered['insights']) { renderInsights(); rendered['insights'] = true; }
-      break;
-    case 'explain-bill':
-      if (!rendered['explain-bill']) { renderExplainBillSetup(); rendered['explain-bill'] = true; }
-      break;
-    case 'what-if':
-      renderWhatIf();
-      break;
-    case 'red-flags':
-      renderRedFlags();
-      break;
-  }
-}
-
-// ===== TAB 1: Bill Explained =====
-function renderBillExplained() {
-  const { copay, deductible, coinsurance } = getScenarioValues();
-  const totalBilled = services.reduce((s, svc) => s + svc.gross_charge, 0);
-  const totalAllowed = services.reduce((s, svc) => s + (svc.negotiated_median || svc.medicare_rate), 0);
-  const patientOwes = calcPatientOwes(totalAllowed, copay, deductible, coinsurance);
-  const insurancePays = totalAllowed - patientOwes + copay; // Copay is separate
-
-  // KPI Cards
-  document.getElementById('kpi-cards').innerHTML = `
-    <div class="kpi-card indigo">
-      <div class="kpi-label">Total Billed</div>
-      <div class="kpi-value indigo">$${totalBilled.toLocaleString()}</div>
+  document.getElementById('markup-section').innerHTML = `
+    <div class="card-header">
+      <h3>⚡ How Aggressive Are These Prices?</h3>
+      <p>Comparison of hospital charges to federal Medicare benchmarks</p>
     </div>
-    <div class="kpi-card cyan">
-      <div class="kpi-label">Allowed Amount</div>
-      <div class="kpi-value cyan">$${totalAllowed.toLocaleString()}</div>
+    <div class="markup-key-stats">
+      <div class="markup-stat-big">
+        <span class="markup-stat-value">${avgMarkup}x</span>
+        <span class="markup-stat-label">Average Markup</span>
+      </div>
+      <div class="markup-stat-big">
+        <span class="markup-stat-value">${above5xPct}%</span>
+        <span class="markup-stat-label">Services Above 5x Medicare</span>
+      </div>
     </div>
-    <div class="kpi-card emerald">
-      <div class="kpi-label">Insurance Pays</div>
-      <div class="kpi-value emerald">$${Math.max(0, totalAllowed - patientOwes).toLocaleString()}</div>
+    <div class="markup-formula">
+      <span title="Hospital Price ÷ Medicare Rate = Markup">Markup = Hospital Price ÷ Medicare Rate</span>
+      <span class="markup-formula-hint">A 5x markup means the hospital charges 5 times the Medicare reimbursement rate</span>
     </div>
-    <div class="kpi-card rose">
-      <div class="kpi-label">You Pay</div>
-      <div class="kpi-value rose">$${patientOwes.toLocaleString()}</div>
+    <div class="distribution-chart">
+      ${Object.entries(buckets).map(([label, count]) => `
+        <div class="dist-column">
+          <div class="dist-bar-wrap">
+            <div class="dist-bar" style="height:${maxBucket > 0 ? (count / maxBucket * 100) : 0}%;background:${bucketColors[label]}">
+              <span class="dist-count">${count}</span>
+            </div>
+          </div>
+          <div class="dist-label">${label}</div>
+          <div class="dist-sublabel">${bucketLabels[label]}</div>
+        </div>
+      `).join('')}
     </div>
   `;
-
-  // Waterfall chart
-  const discount = totalBilled - totalAllowed;
-  const insurancePayAmt = Math.max(0, totalAllowed - patientOwes);
-
-  Plotly.react('waterfall-chart', [{
-    type: 'waterfall',
-    orientation: 'v',
-    measure: ['absolute', 'relative', 'relative', 'total'],
-    x: ['Total Billed', 'Discount', 'Insurance Pays', 'You Pay'],
-    y: [totalBilled, -discount, -insurancePayAmt, patientOwes],
-    text: [`$${totalBilled.toLocaleString()}`, `-$${discount.toLocaleString()}`,
-    `-$${insurancePayAmt.toLocaleString()}`, `$${patientOwes.toLocaleString()}`],
-    textposition: 'outside',
-    connector: { line: { color: 'rgba(99,102,241,0.3)' } },
-    increasing: { marker: { color: '#6366f1' } },
-    decreasing: { marker: { color: '#10b981' } },
-    totals: { marker: { color: '#f43f5e' } }
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'How Your ER Bill Breaks Down', font: { color: chartTitleColor(), size: 16 } },
-    height: 420, showlegend: false,
-  }, { responsive: true });
-
-  // Pie chart
-  const deductibleAmt = Math.min(deductible, totalAllowed);
-  const coinsuranceAmt = (coinsurance / 100) * (totalAllowed - deductibleAmt);
-  const pieData = [
-    { label: 'Copay', value: copay, color: '#6366f1' },
-    { label: 'Deductible', value: deductibleAmt, color: '#06b6d4' },
-    { label: 'Coinsurance', value: coinsuranceAmt, color: '#f59e0b' }
-  ].filter(d => d.value > 0);
-
-  Plotly.react('pie-chart', [{
-    type: 'pie',
-    labels: pieData.map(d => d.label),
-    values: pieData.map(d => d.value),
-    marker: { colors: pieData.map(d => d.color) },
-    textinfo: 'label+percent',
-    textfont: { color: chartTitleColor(), size: 13 },
-    hole: 0.4
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Your Cost Breakdown', font: { color: chartTitleColor(), size: 16 } },
-    height: 420, showlegend: false,
-  }, { responsive: true });
 }
 
-// ===== TAB 2: Cost Breakdown =====
-function renderCostBreakdown() {
-  const data = services.map(s => ({
-    ...s,
-    variance_pct: ((s.cash_price - s.medicare_rate) / s.medicare_rate * 100).toFixed(1)
-  }));
+// ===== RENDER: Most Overpriced Services =====
+function renderMostOverpriced(data) {
+  const { analyzed } = data;
+  const top5 = analyzed.slice(0, 5); // Already sorted by markup desc
+  const severityColors = { critical: '#ef4444', high: '#f97316', moderate: '#f59e0b', fair: '#22c55e' };
+  const severityLabels = { critical: 'Extreme', high: 'Very High', moderate: 'Elevated', fair: 'Fair' };
 
-  // Top 10 variance bar
-  const topVar = [...data].sort((a, b) => b.variance_pct - a.variance_pct).slice(0, 10);
-  Plotly.react('variance-bar-chart', [{
-    type: 'bar',
-    orientation: 'h',
-    y: topVar.map(d => d.description.length > 30 ? d.description.slice(0, 28) + '…' : d.description),
-    x: topVar.map(d => +d.variance_pct),
-    marker: {
-      color: topVar.map(d => +d.variance_pct > 200 ? '#f43f5e' : +d.variance_pct > 50 ? '#f59e0b' : '#10b981')
-    },
-    text: topVar.map(d => d.variance_pct + '%'),
-    textposition: 'outside',
-    textfont: { color: '#94a3b8' }
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Top 10 Services by Price Variance from Medicare', font: { color: chartTitleColor(), size: 14 } },
-    height: 440, yaxis: { autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)' },
-    margin: { ...PLOTLY_DARK.margin, l: 220 }
-  }, { responsive: true });
-
-  // Category comparison
-  const categories = [...new Set(data.map(d => d.category))];
-  const catAvg = categories.map(cat => {
-    const items = data.filter(d => d.category === cat);
-    return {
-      category: cat,
-      cash: items.reduce((s, d) => s + d.cash_price, 0) / items.length,
-      medicare: items.reduce((s, d) => s + d.medicare_rate, 0) / items.length
-    };
-  });
-
-  Plotly.react('category-bar-chart', [
-    { type: 'bar', name: 'Hospital Cash', x: catAvg.map(d => d.category), y: catAvg.map(d => d.cash), marker: { color: '#6366f1' } },
-    { type: 'bar', name: 'Medicare Rate', x: catAvg.map(d => d.category), y: catAvg.map(d => d.medicare), marker: { color: '#10b981' } }
-  ], {
-    ...PLOTLY_DARK, barmode: 'group',
-    title: { text: 'Average Price by Category', font: { color: chartTitleColor(), size: 14 } },
-    height: 440, legend: { font: { color: '#94a3b8' } }
-  }, { responsive: true });
-
-  // Cumulative chart
-  const sorted = [...data].sort((a, b) => b.cash_price - a.cash_price);
-  let cumHosp = 0, cumMed = 0;
-  sorted.forEach((d, i) => { cumHosp += d.cash_price; cumMed += d.medicare_rate; d.cumHosp = cumHosp; d.cumMed = cumMed; d.rank = i + 1; });
-
-  Plotly.react('cumulative-chart', [
-    { type: 'scatter', mode: 'lines+markers', name: 'Hospital', x: sorted.map(d => d.rank), y: sorted.map(d => d.cumHosp), line: { color: '#6366f1', width: 3 }, marker: { size: 5 } },
-    { type: 'scatter', mode: 'lines+markers', name: 'Medicare', x: sorted.map(d => d.rank), y: sorted.map(d => d.cumMed), line: { color: '#10b981', width: 3 }, marker: { size: 5 } }
-  ], {
-    ...PLOTLY_DARK,
-    title: { text: 'Cumulative Cost by Service Rank', font: { color: chartTitleColor(), size: 14 } },
-    height: 400, xaxis: { ...PLOTLY_DARK.xaxis, title: 'Service Rank' }, yaxis: { ...PLOTLY_DARK.yaxis, title: 'Cumulative ($)' },
-    legend: { font: { color: '#94a3b8' } }
-  }, { responsive: true });
-
-  // Category pie
-  const catTotals = categories.map(cat => ({
-    cat, total: data.filter(d => d.category === cat).reduce((s, d) => s + d.cash_price, 0)
-  }));
-  Plotly.react('category-pie-chart', [{
-    type: 'pie', labels: catTotals.map(d => d.cat), values: catTotals.map(d => d.total),
-    marker: { colors: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b'] },
-    textinfo: 'label+percent', textfont: { color: chartTitleColor() }, hole: 0.35
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Cost Distribution by Category', font: { color: chartTitleColor(), size: 14 } },
-    height: 400, showlegend: false
-  }, { responsive: true });
-
-  // Service table
-  const tableHTML = `<table class="data-table">
-    <thead><tr>
-      <th>Service</th><th>Category</th><th>Hospital $</th><th>Medicare $</th><th>Variance %</th><th>Variance $</th>
-    </tr></thead>
-    <tbody>${data.sort((a, b) => b.variance_pct - a.variance_pct).map(d => {
-    const vDol = (d.cash_price - d.medicare_rate).toFixed(2);
-    const cls = +d.variance_pct > 200 ? 'cell-danger' : +d.variance_pct > 50 ? 'cell-warning' : 'cell-success';
-    return `<tr>
-        <td>${d.description}</td><td>${d.category}</td>
-        <td>$${d.cash_price.toFixed(2)}</td><td>$${d.medicare_rate.toFixed(2)}</td>
-        <td class="${cls}">${d.variance_pct}%</td><td class="${cls}">$${vDol}</td>
-      </tr>`;
-  }).join('')}</tbody></table>`;
-  document.getElementById('service-table-wrapper').innerHTML = tableHTML;
-}
-
-// ===== TAB 3: Price Comparison =====
-function renderPriceComparison() {
-  const cats = [...new Set(services.map(s => s.category))];
-  const colorMap = { facility: '#6366f1', imaging: '#06b6d4', lab: '#10b981', procedure: '#f59e0b' };
-
-  // Scatter
-  const traces = cats.map(cat => {
-    const items = services.filter(s => s.category === cat);
-    return {
-      type: 'scatter', mode: 'markers', name: cat,
-      x: items.map(s => s.medicare_rate), y: items.map(s => s.cash_price),
-      marker: { size: items.map(s => Math.max(8, Math.sqrt(s.gross_charge) * 0.4)), color: colorMap[cat], opacity: 0.8 },
-      text: items.map(s => `${s.description} (CPT ${s.cpt})`), hoverinfo: 'text+x+y'
-    };
-  });
-  const maxVal = Math.max(...services.map(s => Math.max(s.medicare_rate, s.cash_price)));
-  traces.push({
-    type: 'scatter', mode: 'lines', name: 'Equal Price',
-    x: [0, maxVal * 1.1], y: [0, maxVal * 1.1],
-    line: { dash: 'dash', color: 'rgba(255,255,255,0.2)', width: 1 }, showlegend: true
-  });
-
-  Plotly.react('scatter-chart', traces, {
-    ...PLOTLY_DARK,
-    title: { text: 'Hospital Cash Price vs Medicare Rate', font: { color: chartTitleColor(), size: 16 } },
-    height: 500, xaxis: { ...PLOTLY_DARK.xaxis, title: 'Medicare Rate ($)' }, yaxis: { ...PLOTLY_DARK.yaxis, title: 'Hospital Cash Price ($)' },
-    legend: { font: { color: '#94a3b8' }, bgcolor: 'rgba(0,0,0,0)' }
-  }, { responsive: true });
-
-  // Histogram
-  const markups = services.map(s => ((s.cash_price - s.medicare_rate) / s.medicare_rate * 100));
-  Plotly.react('histogram-chart', [{
-    type: 'histogram', x: markups, nbinsx: 15,
-    marker: { color: '#06b6d4', line: { color: 'rgba(6,182,212,0.5)', width: 1 } }
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Distribution of Price Markup from Medicare', font: { color: chartTitleColor(), size: 14 } },
-    height: 400, xaxis: { ...PLOTLY_DARK.xaxis, title: 'Markup (%)' }, yaxis: { ...PLOTLY_DARK.yaxis, title: 'Count' },
-    shapes: [{ type: 'line', x0: 0, x1: 0, y0: 0, y1: 1, yref: 'paper', line: { color: '#f43f5e', dash: 'dash', width: 2 } }]
-  }, { responsive: true });
-
-  // Box plot
-  const boxTraces = cats.map(cat => ({
-    type: 'box', name: cat, y: services.filter(s => s.category === cat).map(s => s.cash_price),
-    marker: { color: colorMap[cat] }, boxpoints: 'all', jitter: 0.3
-  }));
-  Plotly.react('box-chart', boxTraces, {
-    ...PLOTLY_DARK,
-    title: { text: 'Price Distribution by Category', font: { color: chartTitleColor(), size: 14 } },
-    height: 400, yaxis: { ...PLOTLY_DARK.yaxis, title: 'Cash Price ($)' }, showlegend: false
-  }, { responsive: true });
-
-  // Service count
-  const countData = cats.map(cat => ({ cat, count: services.filter(s => s.category === cat).length }));
-  Plotly.react('service-count-chart', [{
-    type: 'bar', x: countData.map(d => d.cat), y: countData.map(d => d.count),
-    marker: { color: countData.map(d => colorMap[d.cat]) },
-    text: countData.map(d => d.count), textposition: 'outside', textfont: { color: '#94a3b8' }
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Number of Services by Category', font: { color: chartTitleColor(), size: 14 } },
-    height: 350, yaxis: { ...PLOTLY_DARK.yaxis, title: 'Count' }
-  }, { responsive: true });
-}
-
-// ===== TAB 4: Insights =====
-function renderInsights() {
-  const markups = services.map(s => ((s.cash_price - s.medicare_rate) / s.medicare_rate * 100));
-  const avgMarkup = markups.reduce((a, b) => a + b, 0) / markups.length;
-  const belowMedicare = services.filter(s => s.cash_price < s.medicare_rate).length;
-
-  const highestIdx = markups.indexOf(Math.max(...markups));
-  const highest = services[highestIdx];
-  const highestPct = markups[highestIdx];
-
-  const totalHosp = services.reduce((s, d) => s + d.cash_price, 0);
-  const totalMed = services.reduce((s, d) => s + d.medicare_rate, 0);
-  const diff = Math.abs(totalHosp - totalMed);
-  const hospMore = totalHosp > totalMed;
-
-  // Top 5 best deals
-  const bestDeals = [...services].map(s => ({
-    ...s, savings: s.medicare_rate - s.cash_price,
-    savingsPct: ((s.medicare_rate - s.cash_price) / s.medicare_rate * 100)
-  })).sort((a, b) => b.savings - a.savings).slice(0, 5);
-
-  // Top 5 worst markups
-  const worstMarkups = [...services].map(s => ({
-    ...s, markup: s.cash_price - s.medicare_rate,
-    markupPct: ((s.cash_price - s.medicare_rate) / s.medicare_rate * 100)
-  })).sort((a, b) => b.markup - a.markup).slice(0, 5);
-
-  document.getElementById('insights-content').innerHTML = `
-    <div class="summary-box">
-      <div class="summary-icon">🔍</div>
-      <h3>Key Findings</h3>
-      <p><strong>Surprising Discovery:</strong> Inova's cash prices are on average <strong>${Math.abs(avgMarkup).toFixed(1)}%
-        ${avgMarkup > 0 ? 'HIGHER' : 'LOWER'}</strong> than Medicare rates!</p>
-      <p>${belowMedicare} out of ${services.length} services (${(belowMedicare / services.length * 100).toFixed(0)}%)
-        are priced below Medicare benchmarks.</p>
-      <p style="margin-top:12px"><strong>Highest Markup:</strong> ${highest.description} is
-        <span style="color: var(--accent-rose); font-weight:700">${highestPct.toFixed(1)}%</span> above Medicare rate.</p>
+  document.getElementById('overpriced-section').innerHTML = `
+    <div class="card-header">
+      <h3>🔴 Most Overpriced Services</h3>
+      <p>Ranked by how much the hospital charges above Medicare rates</p>
     </div>
-
-    <div class="kpi-grid">
-      <div class="kpi-card ${hospMore ? 'rose' : 'emerald'}">
-        <div class="kpi-label">💰 Savings Calculator</div>
-        <div class="kpi-value ${hospMore ? 'rose' : 'emerald'}">
-          ${hospMore ? 'SAVE' : 'PAY'} $${diff.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${hospMore ? '' : 'MORE'}
+    <div class="overpriced-list">
+      ${top5.map((s, i) => `
+        <div class="overpriced-item">
+          <div class="overpriced-rank" style="background:${severityColors[s.severity]}">${i + 1}</div>
+          <div class="overpriced-body">
+            <div class="overpriced-top">
+              <span class="overpriced-name">${s.description}</span>
+              <span class="overpriced-badge" style="color:${severityColors[s.severity]}">${s.markup.toFixed(1)}x markup</span>
+            </div>
+            <div class="overpriced-compare">
+              <span class="overpriced-hospital">Hospital: ${fmt(s.gross_charge)}</span>
+              <span class="overpriced-arrow">→</span>
+              <span class="overpriced-medicare">Medicare: ${fmt(s.medicare_rate)}</span>
+              <span class="overpriced-diff">+${fmt(s.savings)}</span>
+            </div>
+            <div class="overpriced-severity">
+              <span class="severity-dot" style="background:${severityColors[s.severity]}"></span>
+              <span>${severityLabels[s.severity]} pricing</span>
+            </div>
+          </div>
         </div>
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px">
-          If you paid Medicare rates instead of hospital cash prices
-        </div>
-      </div>
-      <div class="kpi-card cyan">
-        <div class="kpi-label">Total Hospital</div>
-        <div class="kpi-value cyan">$${totalHosp.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-      </div>
-      <div class="kpi-card emerald">
-        <div class="kpi-label">Total Medicare</div>
-        <div class="kpi-value emerald">$${totalMed.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-      </div>
+      `).join('')}
     </div>
+  `;
+}
 
-    <div class="insight-grid">
+// ===== RENDER: Actionable Insights Summary =====
+function renderInsightsSummary(data) {
+  const { categories, analyzed, totalCharged, negotiationScore, avgMarkup } = data;
+
+  // Main cost driver category
+  const topCat = Object.entries(categories).sort((a, b) => b[1].total - a[1].total)[0];
+  const topCatName = topCat[0].charAt(0).toUpperCase() + topCat[0].slice(1);
+  const topCatPct = (topCat[1].total / totalCharged * 100).toFixed(0);
+
+  // % above 5x
+  const above5x = analyzed.filter(s => s.markup >= 5).length;
+  const above5xPct = (above5x / analyzed.length * 100).toFixed(0);
+
+  // Leverage
+  const leverageMap = { strong: { text: 'Strong', color: '#ef4444', icon: '🔴' }, moderate: { text: 'Moderate', color: '#f59e0b', icon: '🟡' }, low: { text: 'Low', color: '#22c55e', icon: '🟢' } };
+  const lev = leverageMap[negotiationScore];
+
+  document.getElementById('insights-section').innerHTML = `
+    <div class="card-header">
+      <h3>🧠 What This Means For You</h3>
+      <p>Key takeaways from your bill analysis</p>
+    </div>
+    <div class="insights-grid">
       <div class="insight-card">
-        <h4>✅ Top 5 Best Deals (vs Medicare)</h4>
-        <div class="data-table-wrapper">
-          <table class="data-table">
-            <thead><tr><th>Service</th><th>Hospital $</th><th>Medicare $</th><th>Savings $</th></tr></thead>
-            <tbody>${bestDeals.map(d => `<tr>
-              <td>${d.description}</td>
-              <td>$${d.cash_price.toFixed(2)}</td>
-              <td>$${d.medicare_rate.toFixed(2)}</td>
-              <td class="cell-success">$${d.savings.toFixed(2)}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>
+        <div class="insight-card-icon">🏥</div>
+        <div class="insight-card-label">Biggest Cost Driver</div>
+        <div class="insight-card-value">${topCatName}</div>
+        <div class="insight-card-detail">${topCatPct}% of your total bill (${topCat[1].count} service${topCat[1].count > 1 ? 's' : ''})</div>
       </div>
       <div class="insight-card">
-        <h4>⚠️ Top 5 Highest Markups (vs Medicare)</h4>
-        <div class="data-table-wrapper">
-          <table class="data-table">
-            <thead><tr><th>Service</th><th>Hospital $</th><th>Medicare $</th><th>Markup $</th></tr></thead>
-            <tbody>${worstMarkups.map(d => `<tr>
-              <td>${d.description}</td>
-              <td>$${d.cash_price.toFixed(2)}</td>
-              <td>$${d.medicare_rate.toFixed(2)}</td>
-              <td class="cell-danger">$${d.markup.toFixed(2)}</td>
-            </tr>`).join('')}</tbody>
-          </table>
+        <div class="insight-card-icon">⚠️</div>
+        <div class="insight-card-label">Pricing Concern</div>
+        <div class="insight-card-value">${above5xPct}% Above 5x</div>
+        <div class="insight-card-detail">${above5x} of ${analyzed.length} services exceed 5x Medicare rate</div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-card-icon">${lev.icon}</div>
+        <div class="insight-card-label">Negotiation Leverage</div>
+        <div class="insight-card-value" style="color:${lev.color}">${lev.text}</div>
+        <div class="insight-card-detail">Average markup: ${avgMarkup}x · Potential savings: ${fmt(data.totalCharged - data.totalMedicare)}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ===== RENDER: Services — Ranked with Tags =====
+function renderServiceCards(data, filterCategory = 'all') {
+  const { analyzed } = data;
+  const filtered = filterCategory === 'all' ? analyzed : analyzed.filter(s => s.category === filterCategory);
+
+  // Render filter pills
+  const cats = ['all', ...new Set(services.map(s => s.category))];
+  const catLabels = { all: 'All Services', facility: '🏥 Facility', imaging: '📷 Imaging', lab: '🧪 Labs', procedure: '💉 Procedures' };
+  document.getElementById('category-filters').innerHTML = cats.map(c =>
+    `<button class="filter-pill ${c === filterCategory ? 'active' : ''}" onclick="renderServiceCards(window._data, '${c}')">${catLabels[c] || c}</button>`
+  ).join('');
+
+  // Tags
+  const getTag = (s, idx) => {
+    if (idx === 0) return '<span class="svc-tag tag-hot">🔥 Most Expensive</span>';
+    if (s.severity === 'critical') return '<span class="svc-tag tag-danger">⚠ Extreme Markup</span>';
+    if (s.severity === 'high') return '<span class="svc-tag tag-warning">⚠ High Markup</span>';
+    if (s.severity === 'fair') return '<span class="svc-tag tag-success">✅ Fair Price</span>';
+    return '';
+  };
+
+  document.getElementById('service-cards').innerHTML = filtered.map((s, i) => {
+    const barWidth = Math.min(100, (s.medicare_rate / s.gross_charge) * 100);
+    return `
+      <div class="service-card" style="animation-delay:${i * 0.04}s">
+        <div class="service-card-top">
+          <div class="service-card-title">
+            <span class="service-card-cpt">CPT ${s.cpt}</span>
+            <h4>${s.description}</h4>
+            <span class="service-typical-use">${s.typical_use}</span>
+          </div>
+          ${getTag(s, i)}
+        </div>
+        <div class="service-prices">
+          <div class="price-col">
+            <span class="price-label">Hospital Charges</span>
+            <span class="price-val hospital">${fmtDec(s.gross_charge)}</span>
+          </div>
+          <div class="price-col">
+            <span class="price-label">Medicare Rate</span>
+            <span class="price-val medicare">${fmtDec(s.medicare_rate)}</span>
+          </div>
+          <div class="price-col">
+            <span class="price-label">Markup</span>
+            <span class="price-val markup-${s.severity}">${s.markup.toFixed(1)}x</span>
+          </div>
+        </div>
+        <div class="service-bar-wrap">
+          <div class="service-bar-label">Medicare covers ${barWidth.toFixed(0)}% of hospital charge</div>
+          <div class="service-bar-bg">
+            <div class="service-bar-fill" style="width:${barWidth}%"></div>
+            <div class="service-bar-marker" style="left:${barWidth}%"></div>
+          </div>
+        </div>
+        <div class="service-negotiation">
+          <strong>💬 Talking Point:</strong> "I see this ${s.description.toLowerCase()} is billed at ${s.markup.toFixed(1)}x
+          the Medicare rate. The typical negotiated rate is ${fmtDec(s.negotiated_median)}. Can we discuss
+          adjusting this closer to the ${fmtDec(s.cash_price)} cash price?"
         </div>
       </div>
-    </div>
-
-    <div class="insight-card">
-      <h4>📌 What This Means</h4>
-      <ul>
-        <li>Inova's cash prices are competitive with Medicare</li>
-        <li>Price transparency reveals unexpected cost structures</li>
-        <li>Self-pay patients may get better rates than expected</li>
-        <li>Always ask about cash prices vs insurance billing</li>
-      </ul>
-    </div>
-  `;
-}
-
-// ===== TAB 5: Explain My Bill =====
-function renderExplainBillSetup() {
-  const selector = document.getElementById('service-selector');
-  selector.innerHTML = services.map(s => `
-    <label class="service-checkbox">
-      <input type="checkbox" value="${s.cpt}" checked>
-      <span class="cpt-badge">${s.cpt}</span>
-      <span>${s.description}</span>
-    </label>
-  `).join('');
-  generateExplanations(); // Auto-generate on first load
-}
-
-function generateExplanations() {
-  const checked = [...document.querySelectorAll('#service-selector input:checked')].map(c => c.value);
-  const selected = services.filter(s => checked.includes(s.cpt));
-
-  if (selected.length === 0) {
-    document.getElementById('explanation-cards').innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px;">Select at least one service to generate explanations.</p>';
-    document.getElementById('explanation-summary').classList.add('hidden');
-    return;
-  }
-
-  const { copay, deductible, coinsurance } = getScenarioValues();
-  const totalBilled = selected.reduce((s, svc) => s + svc.gross_charge, 0);
-  const totalAllowed = selected.reduce((s, svc) => s + (svc.negotiated_median || svc.medicare_rate), 0);
-  const patientOwes = calcPatientOwes(totalAllowed, copay, deductible, coinsurance);
-
-  // Summary
-  document.getElementById('explanation-summary').classList.remove('hidden');
-  document.getElementById('explanation-summary').innerHTML = `
-    <div class="summary-box">
-      <div class="summary-icon">📝</div>
-      <h3>Your Bill Summary</h3>
-      <p>You visited <strong>${ER_DATA.hospital.name}</strong> and received <strong>${selected.length} service(s)</strong>.</p>
-      <p>The hospital's total list price was <strong style="color:var(--accent-indigo)">$${totalBilled.toLocaleString()}</strong>.
-        After insurance negotiations, the allowed amount is <strong style="color:var(--accent-cyan)">$${totalAllowed.toLocaleString()}</strong>
-        — that's a <strong style="color:var(--accent-emerald)">${((1 - totalAllowed / totalBilled) * 100).toFixed(0)}% discount</strong>.</p>
-      <p>With your plan (Copay $${copay}, Deductible $${deductible.toLocaleString()}, Coinsurance ${coinsurance}%),
-        <strong>you would owe approximately <span style="color:var(--accent-rose);font-size:1.2em">$${patientOwes.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></strong>.</p>
-    </div>
-  `;
-
-  // Per-service cards
-  document.getElementById('explanation-cards').innerHTML = selected.map(s => {
-    const ratio = s.cash_price / s.medicare_rate;
-    const severity = ratio > 5 ? 'high' : ratio > 2 ? 'medium' : 'low';
-    const severityLabel = ratio > 5 ? '🔴 High Markup' : ratio > 2 ? '🟡 Moderate Markup' : '🟢 Fair Price';
-    const negotiated = s.negotiated_median || s.medicare_rate;
-
-    return `<div class="explanation-card ${severity}">
-      <div class="service-name">${s.description}</div>
-      <span class="cpt-tag">CPT ${s.cpt}</span>
-      <div class="explanation-text">
-        <p>You were charged <strong>$${s.gross_charge.toLocaleString()}</strong> for this service.
-          The Medicare benchmark is <strong>$${s.medicare_rate.toFixed(2)}</strong>.
-          Your hospital charges <strong>${ratio.toFixed(1)}x</strong> the Medicare rate.</p>
-        <p>The negotiated (insurance) rate is <strong>$${negotiated.toFixed(2)}</strong>,
-          which is ${((1 - negotiated / s.gross_charge) * 100).toFixed(0)}% off the list price.</p>
-        <p><em>Typical use: ${s.typical_use}</em></p>
-      </div>
-      <span class="ratio-badge ${severity}">${severityLabel} — ${ratio.toFixed(1)}x Medicare</span>
-    </div>`;
+    `;
   }).join('');
 }
 
-// ===== TAB 6: What If Simulator =====
-function renderWhatIf() {
-  const presets = ER_DATA.planPresets;
-  const planKeys = Object.keys(presets);
+// ===== RENDER: Compare — Benchmarking =====
+function renderCompare(data) {
+  const { analyzed, categories } = data;
+  const state = stateBenchmarks.state;
 
-  // Plan Cards
-  const planCardsEl = document.getElementById('plan-cards');
-  if (!planCardsEl.dataset.init) {
-    planCardsEl.innerHTML = planKeys.map(key => {
-      const p = presets[key];
-      return `<div class="plan-card" data-plan="${key}" onclick="selectPlan('${key}')">
-        <div class="plan-name" style="color:${p.color}">${p.name}</div>
-        <div class="plan-desc">${p.description}</div>
-        <div class="plan-cost" id="plan-cost-${key}" style="color:${p.color}">—</div>
-      </div>`;
-    }).join('');
-    planCardsEl.dataset.init = 'true';
-  }
+  // Hospital vs State comparison
+  const catEntries = Object.entries(categories).sort((a, b) => b[1].total - a[1].total);
+  const catColors = { facility: '#6366f1', imaging: '#f59e0b', lab: '#22c55e', procedure: '#ef4444' };
 
-  const isOON = document.getElementById('wif-oon-toggle').checked;
-  const oonMultiplier = isOON ? 2 : 1;
-
-  const totalBilled = services.reduce((s, svc) => s + svc.gross_charge, 0);
-  const baseAllowed = services.reduce((s, svc) => s + (svc.negotiated_median || svc.medicare_rate), 0);
-  const totalAllowed = baseAllowed * oonMultiplier;
-
-  // Calculate for each plan
-  const planCosts = {};
-  planKeys.forEach(key => {
-    const p = presets[key];
-    const cost = calcPatientOwes(totalAllowed, p.copay, p.deductible, p.coinsurance / 100 * 100, p.oopMax);
-    planCosts[key] = cost;
-    const el = document.getElementById(`plan-cost-${key}`);
-    if (el) el.textContent = `$${cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  });
-
-  // Custom plan calc
-  const wifDed = Number(document.getElementById('wif-deductible').value);
-  const wifCo = Number(document.getElementById('wif-coinsurance').value);
-  const wifCop = Number(document.getElementById('wif-copay').value);
-  const wifOOP = Number(document.getElementById('wif-oopmax').value);
-
-  const customCost = calcPatientOwes(totalAllowed, wifCop, wifDed, wifCo, wifOOP);
-  const bestPlan = planKeys.reduce((best, key) => planCosts[key] < planCosts[best] ? key : best, planKeys[0]);
-
-  // KPIs
-  document.getElementById('wif-kpis').innerHTML = `
-    <div class="kpi-card rose">
-      <div class="kpi-label">Your Custom Plan Cost</div>
-      <div class="kpi-value rose">$${customCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-    </div>
-    <div class="kpi-card emerald">
-      <div class="kpi-label">Best Plan</div>
-      <div class="kpi-value emerald">${presets[bestPlan].name}</div>
-      <div style="color:var(--text-muted);font-size:0.8rem;margin-top:4px">$${planCosts[bestPlan].toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-    </div>
-    <div class="kpi-card cyan">
-      <div class="kpi-label">Total Allowed</div>
-      <div class="kpi-value cyan">$${totalAllowed.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-      <div style="color:var(--text-muted);font-size:0.8rem;margin-top:4px">${isOON ? '⚠️ Out-of-Network (2x)' : '✅ In-Network'}</div>
-    </div>
-    <div class="kpi-card amber">
-      <div class="kpi-label">Potential Savings</div>
-      <div class="kpi-value amber">$${Math.max(0, customCost - planCosts[bestPlan]).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-      <div style="color:var(--text-muted);font-size:0.8rem;margin-top:4px">vs ${presets[bestPlan].name}</div>
+  document.getElementById('hospital-comparison').innerHTML = `
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header">
+        <h3>🏥 Inova Alexandria vs ${state} State Average</h3>
+        <p>How this hospital's markups compare to statewide norms</p>
+      </div>
+      <div class="comparison-grid">
+        ${catEntries.map(([cat, d]) => {
+    const bench = stateBenchmarks.byCategory[cat];
+    const hospitalAvg = d.items.reduce((s, i) => s + i.markup, 0) / d.items.length;
+    const diff = hospitalAvg - bench.stateAvg;
+    const isAbove = diff > 0;
+    return `
+            <div class="comparison-card">
+              <div class="comparison-cat" style="color:${catColors[cat]}">${cat.charAt(0).toUpperCase() + cat.slice(1)}</div>
+              <div class="comparison-bars">
+                <div class="comp-row">
+                  <span class="comp-label">This Hospital</span>
+                  <div class="comp-bar-bg">
+                    <div class="comp-bar" style="width:${Math.min(100, hospitalAvg / 25 * 100)}%;background:${catColors[cat]}"></div>
+                  </div>
+                  <span class="comp-val">${hospitalAvg.toFixed(1)}x</span>
+                </div>
+                <div class="comp-row">
+                  <span class="comp-label">${state} Avg</span>
+                  <div class="comp-bar-bg">
+                    <div class="comp-bar" style="width:${Math.min(100, bench.stateAvg / 25 * 100)}%;background:rgba(${catColors[cat].replace('#', '').match(/../g).map(h => parseInt(h, 16)).join(',')},0.4)"></div>
+                  </div>
+                  <span class="comp-val">${bench.stateAvg.toFixed(1)}x</span>
+                </div>
+              </div>
+              <div class="comparison-verdict ${isAbove ? 'above' : 'below'}">
+                ${isAbove ? '📈' : '📉'} ${Math.abs(diff).toFixed(1)}x ${isAbove ? 'above' : 'below'} state average
+              </div>
+            </div>
+          `;
+  }).join('')}
+      </div>
     </div>
   `;
 
-  // Comparison bar chart
-  const allPlans = [...planKeys.map(k => ({ name: presets[k].name, cost: planCosts[k], color: presets[k].color })),
-  { name: 'Your Custom', cost: customCost, color: '#f43f5e' }];
-  allPlans.sort((a, b) => a.cost - b.cost);
+  // Variance Analysis — Top overcharges vs state
+  const variances = analyzed.map(s => ({
+    ...s,
+    diff: s.markup - s.stateMarkup,
+    pctAboveState: ((s.markup / s.stateMarkup - 1) * 100).toFixed(0)
+  })).filter(s => s.diff > 0).sort((a, b) => b.diff - a.diff).slice(0, 8);
 
-  Plotly.react('wif-comparison-chart', [{
-    type: 'bar', x: allPlans.map(p => p.name), y: allPlans.map(p => p.cost),
-    marker: { color: allPlans.map(p => p.color) },
-    text: allPlans.map(p => `$${p.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`),
-    textposition: 'outside', textfont: { color: '#94a3b8' }
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Patient Cost by Plan', font: { color: chartTitleColor(), size: 14 } },
-    height: 400, yaxis: { ...PLOTLY_DARK.yaxis, title: 'You Pay ($)' }
-  }, { responsive: true });
-
-  // Gauge
-  const gaugeVal = (customCost / wifOOP) * 100;
-  Plotly.react('wif-gauge-chart', [{
-    type: 'indicator', mode: 'gauge+number+delta',
-    value: customCost,
-    number: { prefix: '$', font: { color: chartTitleColor(), size: 32 } },
-    delta: { reference: wifOOP, prefix: '$', font: { size: 14 } },
-    gauge: {
-      axis: { range: [0, wifOOP], tickcolor: '#94a3b8', tickfont: { color: '#94a3b8' } },
-      bar: { color: gaugeVal > 80 ? '#f43f5e' : gaugeVal > 50 ? '#f59e0b' : '#10b981' },
-      bgcolor: 'rgba(255,255,255,0.04)',
-      borderwidth: 0,
-      steps: [
-        { range: [0, wifOOP * 0.5], color: 'rgba(16,185,129,0.08)' },
-        { range: [wifOOP * 0.5, wifOOP * 0.8], color: 'rgba(245,158,11,0.08)' },
-        { range: [wifOOP * 0.8, wifOOP], color: 'rgba(244,63,94,0.08)' }
-      ],
-      threshold: { line: { color: '#f43f5e', width: 3 }, thickness: 0.8, value: wifOOP }
-    }
-  }], {
-    ...PLOTLY_DARK,
-    title: { text: 'Progress to OOP Maximum', font: { color: chartTitleColor(), size: 14 } },
-    height: 400
-  }, { responsive: true });
-
-  // Comparison table
-  const tableRows = [...planKeys.map(k => {
-    const p = presets[k];
-    return `<tr>
-      <td style="font-weight:600;color:${p.color}">${p.name}</td>
-      <td>$${p.deductible.toLocaleString()}</td>
-      <td>${p.coinsurance}%</td>
-      <td>$${p.copay}</td>
-      <td>$${p.oopMax.toLocaleString()}</td>
-      <td class="${planCosts[k] === planCosts[bestPlan] ? 'best-value' : 'highlight-col'}">$${planCosts[k].toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-    </tr>`;
-  }),
-  `<tr style="background:rgba(244,63,94,0.06)">
-      <td style="font-weight:700;color:#f43f5e">Your Custom</td>
-      <td>$${wifDed.toLocaleString()}</td>
-      <td>${wifCo}%</td>
-      <td>$${wifCop}</td>
-      <td>$${wifOOP.toLocaleString()}</td>
-      <td class="highlight-col" style="color:#f43f5e;font-weight:700">$${customCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-    </tr>`
-  ].join('');
-
-  document.getElementById('wif-table-wrapper').innerHTML = `
-    <table class="comparison-table">
-      <thead><tr>
-        <th>Plan</th><th>Deductible</th><th>Coinsurance</th><th>Copay</th><th>OOP Max</th><th>You Pay</th>
-      </tr></thead>
-      <tbody>${tableRows}</tbody>
-    </table>
+  document.getElementById('variance-analysis').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h3>🔍 Variance Analysis — Where This Hospital Stands Out</h3>
+        <p>Services where Inova Alexandria charges significantly more than the ${state} average</p>
+      </div>
+      <div class="variance-list">
+        ${variances.map((s, i) => `
+          <div class="variance-item" style="animation-delay:${i * 0.06}s">
+            <div class="variance-header">
+              <span class="variance-title">${s.description}</span>
+              <span class="variance-cpt">CPT ${s.cpt}</span>
+            </div>
+            <div class="variance-stats">
+              <div class="var-stat">
+                <span class="var-label">This Hospital</span>
+                <span class="var-val danger">${s.markup.toFixed(1)}x Medicare</span>
+              </div>
+              <div class="var-stat">
+                <span class="var-label">${state} Average</span>
+                <span class="var-val muted">${s.stateMarkup.toFixed(1)}x Medicare</span>
+              </div>
+              <div class="var-stat">
+                <span class="var-label">Difference</span>
+                <span class="var-val ${s.diff > 3 ? 'danger' : 'warning'}">+${s.diff.toFixed(1)}x above state</span>
+              </div>
+            </div>
+            <div class="variance-context">
+              ℹ️ ${s.description} at Inova is priced ${s.pctAboveState}% higher than the typical ${state} hospital.
+              National median markup for ${s.category} is ${stateBenchmarks.byCategory[s.category]?.nationalMedian || '—'}x.
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
   `;
 }
 
-function selectPlan(key) {
-  const p = ER_DATA.planPresets[key];
-  document.getElementById('wif-deductible').value = p.deductible;
-  document.getElementById('wif-coinsurance').value = p.coinsurance;
-  document.getElementById('wif-copay').value = p.copay;
-  document.getElementById('wif-oopmax').value = p.oopMax;
+// ===== RENDER: Simulator =====
+function calcOutOfPocket(totalBill, deductible, coinsurance, copay, oopMax) {
+  let total = copay;
+  let remaining = totalBill - copay;
+  if (remaining <= 0) return Math.min(total, oopMax);
 
-  document.getElementById('wif-deductible-value').textContent = `$${p.deductible.toLocaleString()}`;
-  document.getElementById('wif-coinsurance-value').textContent = `${p.coinsurance}%`;
-  document.getElementById('wif-copay-value').textContent = `$${p.copay}`;
-  document.getElementById('wif-oopmax-value').textContent = `$${p.oopMax.toLocaleString()}`;
+  const dedApplied = Math.min(remaining, deductible);
+  total += dedApplied;
+  remaining -= dedApplied;
 
-  document.querySelectorAll('.plan-card').forEach(card => card.classList.remove('selected'));
-  document.querySelector(`.plan-card[data-plan="${key}"]`).classList.add('selected');
+  const coinsAmt = remaining * (coinsurance / 100);
+  total += coinsAmt;
 
-  renderWhatIf();
+  return Math.min(total, oopMax);
 }
 
-// ===== TAB 7: Red Flags =====
-function renderRedFlags() {
-  const medThreshold = Number(document.getElementById('rf-medicare-threshold').value);
-  const varThreshold = Number(document.getElementById('rf-variance-threshold').value);
+function renderSimulator(data) {
+  const { totalCharged } = data;
+  const presetEntries = Object.entries(planPresets);
 
-  const flags = [];
-  const cashPrices = services.map(s => s.cash_price);
-  const p95 = cashPrices.sort((a, b) => a - b)[Math.floor(cashPrices.length * 0.95)];
-
-  services.forEach(s => {
-    const ratio = s.cash_price / s.medicare_rate;
-    const negVariance = s.negotiated_max && s.negotiated_min
-      ? ((s.negotiated_max - s.negotiated_min) / s.negotiated_min * 100) : 0;
-
-    if (ratio >= medThreshold) {
-      flags.push({
-        ...s, flagType: 'Extreme Medicare Markup', severity: ratio >= medThreshold * 1.5 ? 'critical' : 'warning',
-        message: `⚠️ This ${s.description.toLowerCase()} price is ${((ratio - 1) * 100).toFixed(0)}% above Medicare average.`,
-        ratio, detail: `Hospital charges ${ratio.toFixed(1)}x the Medicare rate of $${s.medicare_rate.toFixed(2)}`
-      });
-    }
-    if (negVariance >= varThreshold) {
-      flags.push({
-        ...s, flagType: 'High Negotiated Variance', severity: 'warning',
-        message: `⚠️ Negotiated rates vary by ${negVariance.toFixed(0)}% ($${s.negotiated_min} – $${s.negotiated_max}).`,
-        ratio: negVariance / 100, detail: `Min: $${s.negotiated_min}, Max: $${s.negotiated_max}`
-      });
-    }
-    if (s.cash_price >= p95 && ratio > 2) {
-      const exists = flags.find(f => f.cpt === s.cpt && f.flagType === 'Extreme Medicare Markup');
-      if (!exists) {
-        flags.push({
-          ...s, flagType: 'Outlier Pricing', severity: 'warning',
-          message: `⚠️ This service is in the top 5% most expensive and is ${ratio.toFixed(1)}x Medicare.`,
-          ratio, detail: `Cash price $${s.cash_price.toFixed(2)} is in the 95th percentile`
-        });
-      }
-    }
-  });
-
-  flags.sort((a, b) => b.ratio - a.ratio);
-
-  const criticalCount = flags.filter(f => f.severity === 'critical').length;
-  const warningCount = flags.filter(f => f.severity === 'warning').length;
-  const okCount = services.length - new Set(flags.map(f => f.cpt)).size;
-
-  // Alert banner
-  document.getElementById('rf-alert-banner').innerHTML = `
-    <div class="alert-stat critical">
-      <div class="stat-number">${criticalCount}</div>
-      <div class="stat-label">🔴 Critical</div>
-    </div>
-    <div class="alert-stat warning">
-      <div class="stat-number">${warningCount}</div>
-      <div class="stat-label">🟠 Warning</div>
-    </div>
-    <div class="alert-stat ok">
-      <div class="stat-number">${okCount}</div>
-      <div class="stat-label">🟢 Clean</div>
-    </div>
-    <div class="alert-stat" style="background:rgba(99,102,241,0.08);border-color:rgba(99,102,241,0.2)">
-      <div class="stat-number" style="color:var(--accent-indigo)">${services.length}</div>
-      <div class="stat-label">Total Services</div>
-    </div>
-  `;
-
-  // Flag cards
-  document.getElementById('rf-flag-cards').innerHTML = flags.length === 0
-    ? '<div class="summary-box"><div class="summary-icon">✅</div><h3>No Red Flags Detected</h3><p>All services are within acceptable thresholds. Try lowering the thresholds to find more potential issues.</p></div>'
-    : flags.map(f => `
-      <div class="flag-card ${f.severity}">
-        <div class="flag-icon">${f.severity === 'critical' ? '🔴' : '🟠'}</div>
-        <div class="flag-content">
-          <div class="flag-title">${f.description} (CPT ${f.cpt})</div>
-          <div class="flag-message">${f.message}</div>
-          <div class="flag-message" style="margin-top:4px;font-size:0.8rem;color:var(--text-muted)">${f.detail} — Type: ${f.flagType}</div>
+  // Render plan cards - Simplified for less clutter
+  document.getElementById('plan-cards').innerHTML = presetEntries.map(([key, plan]) => {
+    const oop = calcOutOfPocket(totalCharged, plan.deductible, plan.coinsurance, plan.copay, plan.oopMax);
+    const insurancePays = totalCharged - oop;
+    return `
+      <div class="plan-card" onclick="applyPlan('${key}')" style="border-top:4px solid ${plan.color}" title="${plan.description}">
+        <div class="plan-card-header">
+          <div class="plan-card-name">${plan.name}</div>
+        </div>
+        <div class="plan-card-body">
+          <div class="plan-cost">${fmt(oop)}</div>
+          <div class="plan-label">Your Share</div>
+        </div>
+        <div class="plan-card-footer">
+          <span class="plan-detail-icon">🛡️</span>
+          <span class="plan-detail-text">Plan covers ${fmt(insurancePays)}</span>
         </div>
       </div>
-    `).join('');
-
-  // Scatter with flags highlighted
-  const flaggedCPTs = new Set(flags.map(f => f.cpt));
-  const normal = services.filter(s => !flaggedCPTs.has(s.cpt));
-  const flagged = services.filter(s => flaggedCPTs.has(s.cpt));
-
-  const maxVal = Math.max(...services.map(s => Math.max(s.medicare_rate, s.cash_price)));
-
-  Plotly.react('rf-scatter-chart', [
-    {
-      type: 'scatter', mode: 'markers', name: 'Normal',
-      x: normal.map(s => s.medicare_rate), y: normal.map(s => s.cash_price),
-      marker: { size: 10, color: '#10b981', opacity: 0.6 },
-      text: normal.map(s => s.description), hoverinfo: 'text+x+y'
-    },
-    {
-      type: 'scatter', mode: 'markers+text', name: '🚩 Flagged',
-      x: flagged.map(s => s.medicare_rate), y: flagged.map(s => s.cash_price),
-      marker: { size: 14, color: '#f43f5e', symbol: 'diamond', line: { color: '#fff', width: 1 } },
-      text: flagged.map(s => s.cpt), textposition: 'top center', textfont: { color: '#f43f5e', size: 10 },
-      hovertext: flagged.map(s => `${s.description} — ${(s.cash_price / s.medicare_rate).toFixed(1)}x Medicare`), hoverinfo: 'text'
-    },
-    {
-      type: 'scatter', mode: 'lines', name: `${medThreshold}x Medicare`,
-      x: [0, maxVal], y: [0, maxVal * medThreshold],
-      line: { dash: 'dash', color: 'rgba(244,63,94,0.4)', width: 2 }, showlegend: true
-    },
-    {
-      type: 'scatter', mode: 'lines', name: 'Equal Price',
-      x: [0, maxVal * 1.1], y: [0, maxVal * 1.1],
-      line: { dash: 'dot', color: 'rgba(255,255,255,0.15)', width: 1 }
-    }
-  ], {
-    ...PLOTLY_DARK,
-    title: { text: 'Red Flag Detection — Hospital vs Medicare', font: { color: chartTitleColor(), size: 14 } },
-    height: 450,
-    xaxis: { ...PLOTLY_DARK.xaxis, title: 'Medicare Rate ($)' },
-    yaxis: { ...PLOTLY_DARK.yaxis, title: 'Hospital Cash Price ($)' },
-    legend: { font: { color: '#94a3b8' }, bgcolor: 'rgba(0,0,0,0)' }
-  }, { responsive: true });
-
-  // Flag table
-  if (flags.length > 0) {
-    document.getElementById('rf-table-wrapper').innerHTML = `
-      <table class="data-table">
-        <thead><tr>
-          <th>Service</th><th>CPT</th><th>Flag Type</th><th>Severity</th><th>Hospital $</th><th>Medicare $</th><th>Ratio</th>
-        </tr></thead>
-        <tbody>${flags.map(f => `<tr>
-          <td>${f.description}</td>
-          <td><span style="font-family:monospace;color:var(--accent-cyan)">${f.cpt}</span></td>
-          <td>${f.flagType}</td>
-          <td class="${f.severity === 'critical' ? 'cell-danger' : 'cell-warning'}">${f.severity.toUpperCase()}</td>
-          <td>$${f.cash_price.toFixed(2)}</td>
-          <td>$${f.medicare_rate.toFixed(2)}</td>
-          <td class="cell-danger">${f.ratio.toFixed(1)}x</td>
-        </tr>`).join('')}</tbody>
-      </table>
     `;
-  } else {
-    document.getElementById('rf-table-wrapper').innerHTML = '<p style="padding:20px;text-align:center;color:var(--text-muted)">No flagged services.</p>';
+  }).join('');
+
+  // Custom plan
+  updateCustomSim(data);
+}
+
+function applyPlan(key) {
+  const plan = planPresets[key];
+  document.getElementById('wif-deductible').value = plan.deductible;
+  document.getElementById('wif-coinsurance').value = plan.coinsurance;
+  document.getElementById('wif-copay').value = plan.copay;
+  document.getElementById('wif-oopmax').value = plan.oopMax;
+  document.getElementById('wif-deductible-value').textContent = fmt(plan.deductible);
+  document.getElementById('wif-coinsurance-value').textContent = plan.coinsurance + '%';
+  document.getElementById('wif-copay-value').textContent = fmt(plan.copay);
+  document.getElementById('wif-oopmax-value').textContent = fmt(plan.oopMax);
+  updateCustomSim(window._data);
+}
+
+function updateCustomSim(data) {
+  const totalBill = data.totalCharged;
+  const ded = +document.getElementById('wif-deductible').value;
+  const coins = +document.getElementById('wif-coinsurance').value;
+  const cop = +document.getElementById('wif-copay').value;
+  const oop = +document.getElementById('wif-oopmax').value;
+
+  const yourCost = calcOutOfPocket(totalBill, ded, coins, cop, oop);
+  const insurancePays = totalBill - yourCost;
+
+  // Update values display
+  document.getElementById('wif-deductible-value').textContent = fmt(ded);
+  document.getElementById('wif-coinsurance-value').textContent = coins + '%';
+  document.getElementById('wif-copay-value').textContent = fmt(cop);
+  document.getElementById('wif-oopmax-value').textContent = fmt(oop);
+
+  // Sim results
+  document.getElementById('sim-results').innerHTML = `
+    <div class="sim-result-card">
+      <div class="sim-result-label">Total Bill</div>
+      <div class="sim-result-value">${fmt(totalBill)}</div>
+    </div>
+    <div class="sim-result-card highlight">
+      <div class="sim-result-label">You Pay</div>
+      <div class="sim-result-value danger">${fmt(yourCost)}</div>
+    </div>
+    <div class="sim-result-card">
+      <div class="sim-result-label">Insurance Pays</div>
+      <div class="sim-result-value success">${fmt(insurancePays)}</div>
+    </div>
+  `;
+
+  // Recommendation
+  renderRecommendation(data);
+}
+
+function renderRecommendation(data) {
+  const totalBill = data.totalCharged;
+  const results = Object.entries(planPresets).map(([key, plan]) => ({
+    key, name: plan.name,
+    oop: calcOutOfPocket(totalBill, plan.deductible, plan.coinsurance, plan.copay, plan.oopMax),
+    worstCase: plan.oopMax,
+    description: plan.description
+  })).sort((a, b) => a.oop - b.oop);
+
+  const best = results[0];
+  const worst = results[results.length - 1];
+  const savings = worst.oop - best.oop;
+
+  const recEl = document.getElementById('sim-recommendation');
+  recEl.style.display = 'block';
+  recEl.innerHTML = `
+    <div class="rec-header">
+      <span class="rec-icon">📌</span>
+      <div>
+        <h3>Recommendation</h3>
+        <p>Based on this ${fmt(totalBill)} ER bill scenario</p>
+      </div>
+    </div>
+    <div class="rec-body">
+      <div class="rec-best">
+        <span class="rec-label">Best Plan for This Visit</span>
+        <span class="rec-plan">${best.name}</span>
+        <span class="rec-cost">${fmt(best.oop)} out-of-pocket</span>
+      </div>
+      <div class="rec-compare">
+        <div class="rec-stat">
+          <span class="rec-stat-label">Savings vs Worst Plan</span>
+          <span class="rec-stat-value success">${fmt(savings)}</span>
+        </div>
+        <div class="rec-stat">
+          <span class="rec-stat-label">Worst-Case Exposure (${best.name})</span>
+          <span class="rec-stat-value">${fmt(best.worstCase)}</span>
+        </div>
+        <div class="rec-stat">
+          <span class="rec-stat-label">Risk Level</span>
+          <span class="rec-stat-value">${best.worstCase > 7000 ? '⚠️ High Deductible Risk' : best.worstCase > 4000 ? '🟡 Moderate Risk' : '🟢 Low Risk'}</span>
+        </div>
+      </div>
+    </div>
+    <div class="rec-rankings">
+      <h4>All Plans Ranked</h4>
+      <div class="rec-rank-list">
+        ${results.map((r, i) => `
+          <div class="rec-rank-item ${i === 0 ? 'best' : ''}">
+            <span class="rec-rank">#${i + 1}</span>
+            <span class="rec-rank-name">${r.name}</span>
+            <span class="rec-rank-cost">${fmt(r.oop)}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ===== RENDER: Action Plan =====
+function renderActionPlan(data) {
+  const { analyzed, totalCharged, totalMedicare, overchargeCount, negotiationScore } = data;
+  const topOvercharge = analyzed[0];
+
+  // Negotiation Letter
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const letterText = `${today}
+
+To: ${hospital.name} Billing Department
+Re: Request for Bill Review and Adjustment
+Patient Account #: [Your Account Number]
+
+Dear Billing Department,
+
+I am writing to formally request a review and adjustment of my emergency room bill dated [Visit Date], totaling ${fmt(totalCharged)}.
+
+After comparing each charge to CMS Medicare reimbursement rates, I have identified ${overchargeCount} services billed at 8x or more above the Medicare benchmark. The total Medicare-equivalent cost for these services would be approximately ${fmt(totalMedicare)}, representing a markup of ${data.avgMarkup}x.
+
+Services of concern:
+${analyzed.filter(s => s.markup >= 8).map(s =>
+    `• ${s.description} (CPT ${s.cpt}): Billed ${fmtDec(s.gross_charge)}, Medicare rate ${fmtDec(s.medicare_rate)} — ${s.markup.toFixed(1)}x markup`
+  ).join('\n')}
+
+I respectfully request:
+1. An itemized bill with all CPT codes and descriptions
+2. Review of the above charges against your facility's pricing policies
+3. Consideration of adjustment to the cash-pay rate of approximately ${fmt(totalMedicare * 2)}
+4. Information about financial assistance or hardship programs
+
+I am aware of my rights under the No Surprises Act and CMS price transparency requirements. I look forward to your prompt response.
+
+Sincerely,
+[Your Name]
+[Your Phone Number]
+[Your Address]`;
+
+  document.getElementById('negotiation-letter').innerHTML = `
+    <pre class="letter-preview">${letterText}</pre>
+  `;
+
+  // Store letter for download
+  window._letterText = letterText;
+
+  // Dispute Checklist
+  document.getElementById('dispute-checklist').innerHTML = `
+    <div class="checklist">
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 1:</strong> Request an itemized bill — hospitals are legally required to provide one</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 2:</strong> Compare each CPT code to Medicare rates (this tool does it for you)</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 3:</strong> Call the billing department and reference specific overcharges</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 4:</strong> Ask about financial assistance, charity care, or payment plans</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 5:</strong> Send the negotiation letter (download above) via certified mail</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 6:</strong> Contact your insurance for an Explanation of Benefits (EOB)</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 7:</strong> If unresolved, file a complaint with your state's Attorney General or Insurance Commissioner</span></label>
+      <label class="check-item"><input type="checkbox"><span class="check-text"><strong>Step 8:</strong> Consider hiring a medical billing advocate (they can often reduce bills by 20-50%)</span></label>
+    </div>
+  `;
+
+  // Talking Points
+  document.getElementById('talking-points').innerHTML = `
+    <div class="talking-points-list">
+      <div class="tp-item">
+        <div class="tp-icon">📞</div>
+        <div class="tp-content">
+          <h4>Opening Line</h4>
+          <p class="tp-script">"Hi, I'm calling about my ER bill. I've compared my charges to Medicare reimbursement rates and I'd like to discuss some specific items that appear to be significantly above benchmark pricing."</p>
+        </div>
+      </div>
+      <div class="tp-item">
+        <div class="tp-icon">💰</div>
+        <div class="tp-content">
+          <h4>Requesting Adjustment</h4>
+          <p class="tp-script">"My ${topOvercharge.description} was billed at ${fmtDec(topOvercharge.gross_charge)}, which is ${topOvercharge.markup.toFixed(1)}x the Medicare rate of ${fmtDec(topOvercharge.medicare_rate)}. Your own cash price for this is ${fmtDec(topOvercharge.cash_price)}. Can we adjust this charge?"</p>
+        </div>
+      </div>
+      <div class="tp-item">
+        <div class="tp-icon">📋</div>
+        <div class="tp-content">
+          <h4>Requesting Financial Assistance</h4>
+          <p class="tp-script">"Does your hospital have a financial assistance program or charity care policy? I believe I may qualify for a reduction based on my income level."</p>
+        </div>
+      </div>
+      <div class="tp-item">
+        <div class="tp-icon">⚖️</div>
+        <div class="tp-content">
+          <h4>Referencing Regulations</h4>
+          <p class="tp-script">"I'm aware that under the No Surprises Act, patients are protected from certain unexpected charges. I'd like to understand which of these charges fall under that protection and whether my bill qualifies for review."</p>
+        </div>
+      </div>
+      <div class="tp-item">
+        <div class="tp-icon">🤝</div>
+        <div class="tp-content">
+          <h4>Negotiating Payment</h4>
+          <p class="tp-script">"If I'm able to pay in full today, would you be willing to offer a prompt-pay discount? I've seen that your cash price for these services totals approximately ${fmt(analyzed.reduce((s, i) => s + i.cash_price, 0))}."</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Data Methodology
+  document.getElementById('data-methodology').innerHTML = `
+    <div class="methodology-content">
+      <div class="method-section">
+        <h4>📊 How Medicare Benchmarks Work</h4>
+        <p>Medicare reimbursement rates are set by the Center for Medicare & Medicaid Services (CMS). These rates represent the amount the federal government pays hospitals for specific procedures, identified by CPT (Current Procedural Terminology) codes. While hospitals can charge whatever they want, Medicare rates provide a widely-accepted baseline for fair pricing.</p>
+      </div>
+      <div class="method-section">
+        <h4>💵 What is a "Markup"?</h4>
+        <p>Markup ratio = Hospital Charge ÷ Medicare Rate. A markup of 10x means the hospital charges 10 times what Medicare would pay. National median markup for ER services is approximately ${nationalPercentiles.p50}x. Markups above ${nationalPercentiles.p90}x place a hospital in the 90th percentile nationally.</p>
+      </div>
+      <div class="method-section">
+        <h4>🏥 Cash Price vs. Allowed Amount</h4>
+        <p>The <strong>cash price</strong> is what the hospital charges self-pay (uninsured) patients — typically 30% of gross charges. The <strong>allowed amount</strong> (or negotiated rate) is what insurance companies have agreed to pay, which can vary by 3-10x depending on the payer.</p>
+      </div>
+      <div class="method-section">
+        <h4>📋 CPT Code Mapping</h4>
+        <p>Each medical service is identified by a 5-digit CPT code. This tool maps your bill's CPT codes to Medicare's fee schedule to provide accurate benchmark pricing. We analyze ${services.length} of the most common ER services.</p>
+      </div>
+      <div class="method-section">
+        <h4>⚠️ Limitations</h4>
+        <p>This tool uses published price transparency data from ${hospital.name} and CMS Medicare rates. Actual patient costs depend on insurance contracts, network status, and individual plan design. State average data is approximated from published research. This tool is for informational purposes only — not medical or legal advice.</p>
+      </div>
+    </div>
+  `;
+}
+
+function downloadNegotiationLetter() {
+  if (!window._letterText) return;
+  const blob = new Blob([window._letterText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ER_Bill_Negotiation_Letter.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ===== AI Bill Explanation (Gemini) =====
+async function explainBillWithAI() {
+  const textarea = document.getElementById('bill-text-input');
+  const resultEl = document.getElementById('ai-explanation-result');
+  const btn = document.getElementById('ai-explain-btn');
+  const billText = textarea.value.trim();
+
+  if (!billText) {
+    alert('Please paste your ER bill text first.');
+    textarea.focus();
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Analyzing...';
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = `
+    <div class="ai-loading">
+      <div class="ai-spinner"></div>
+      <span>Gemini is analyzing your bill... this may take a few seconds</span>
+    </div>
+  `;
+  resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const response = await fetch('/explain-bill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bill_text: billText }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Server error (${response.status})`);
+
+    const formatted = data.explanation
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/^### (.*$)/gm, '<h4 style="margin-top:16px;margin-bottom:6px">$1</h4>')
+      .replace(/^## (.*$)/gm, '<h3 style="margin-top:20px;margin-bottom:8px">$1</h3>')
+      .replace(/^- (.*$)/gm, '→ $1')
+      .replace(/\n/g, '<br>');
+
+    resultEl.innerHTML = `
+      <h4>🤖 AI-Powered Bill Explanation</h4>
+      <div class="ai-text">${formatted}</div>
+    `;
+  } catch (err) {
+    resultEl.innerHTML = `
+      <div class="ai-error">
+        <strong>⚠️ Could not get AI explanation:</strong> ${err.message}<br>
+        <span style="font-size:0.78rem;margin-top:6px;display:inline-block">
+          Make sure the backend server is running: <code>python server.py</code>
+        </span>
+      </div>
+    `;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Explain My Bill with AI';
   }
 }
 
-// ===== Initial Render =====
-renderBillExplained();
+// ===== View Switching =====
+function showView(viewId) {
+  ['landing-view', 'processing-view', 'results-view'].forEach(id => {
+    document.getElementById(id).style.display = id === viewId ? '' : 'none';
+  });
+  // Show/hide nav tabs based on view
+  const navLinks = document.getElementById('nav-links');
+  const hamburger = document.getElementById('nav-hamburger');
+  if (viewId === 'results-view') {
+    navLinks.style.display = '';
+    hamburger.style.display = '';
+  } else {
+    navLinks.style.display = 'none';
+    hamburger.style.display = 'none';
+  }
+}
+
+// ===== Processing Animation =====
+function showProcessing() {
+  return new Promise(resolve => {
+    showView('processing-view');
+    window.scrollTo(0, 0);
+
+    const steps = [
+      document.getElementById('proc-step-1'),
+      document.getElementById('proc-step-2'),
+      document.getElementById('proc-step-3')
+    ];
+    const bar = document.getElementById('processing-bar');
+
+    // Reset
+    steps.forEach(s => s.classList.remove('active', 'done'));
+    steps[0].classList.add('active');
+    bar.style.width = '0%';
+
+    // Step 1 → 2
+    setTimeout(() => {
+      steps[0].classList.remove('active');
+      steps[0].classList.add('done');
+      steps[1].classList.add('active');
+      bar.style.width = '33%';
+    }, 1000);
+
+    // Step 2 → 3
+    setTimeout(() => {
+      steps[1].classList.remove('active');
+      steps[1].classList.add('done');
+      steps[2].classList.add('active');
+      bar.style.width = '66%';
+    }, 2000);
+
+    // Complete
+    setTimeout(() => {
+      steps[2].classList.remove('active');
+      steps[2].classList.add('done');
+      bar.style.width = '100%';
+    }, 2800);
+
+    setTimeout(resolve, 3200);
+  });
+}
+
+// ===== Reveal Results Dashboard =====
+function revealResults(data) {
+  window._data = data;
+
+  renderNegotiationScore(data);
+  renderCategoryBreakdown(data);
+  renderTopCostServices(data);
+  renderMarkupDistribution(data);
+  // renderMostOverpriced(data);
+  renderInsightsSummary(data);
+  renderServiceCards(data);
+  renderCompare(data);
+  renderSimulator(data);
+  renderActionPlan(data);
+
+  // Simulator sliders
+  ['wif-deductible', 'wif-coinsurance', 'wif-copay', 'wif-oopmax'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => updateCustomSim(data));
+  });
+
+  showView('results-view');
+  window.scrollTo(0, 0);
+}
+
+// ===== Start Demo Report =====
+async function startDemo() {
+  await showProcessing();
+  const data = computeAnalytics();
+  revealResults(data);
+}
+
+// ===== Handle File Upload =====
+function setupUpload() {
+  const fileInput = document.getElementById('bill-upload');
+  const uploadLabel = document.querySelector('.upload-cta-btn');
+
+  if (!fileInput) return;
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // For now, any upload triggers the demo data
+    // In production, this would send to backend for OCR + parsing
+    await showProcessing();
+    const data = computeAnalytics();
+    revealResults(data);
+  });
+
+  // Drag and drop
+  if (uploadLabel) {
+    uploadLabel.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadLabel.classList.add('drag-over');
+    });
+    uploadLabel.addEventListener('dragleave', () => {
+      uploadLabel.classList.remove('drag-over');
+    });
+    uploadLabel.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadLabel.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        fileInput.files = e.dataTransfer.files;
+        fileInput.dispatchEvent(new Event('change'));
+      }
+    });
+  }
+}
+
+// ===== Initialize =====
+function init() {
+  setupTheme();
+  setupTabs();
+  setupUpload();
+  animateCounters();
+  showView('landing-view');
+}
+
+init();

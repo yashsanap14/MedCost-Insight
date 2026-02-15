@@ -153,5 +153,29 @@ const ER_DATA = {
     medicareMultiplier: 5.0,
     negotiatedVariancePct: 200,
     outlierPercentile: 95
+  },
+
+  // Virginia state average Medicare multipliers per CPT (simulated from CMS data)
+  stateBenchmarks: {
+    state: "Virginia",
+    avgMultiplier: 2.1,
+    byCpt: {
+      "99281": 5.8, "99282": 4.9, "99283": 4.5, "99284": 4.2, "99285": 4.0,
+      "70450": 11.2, "70486": 9.8, "71045": 10.5, "71046": 11.8, "73610": 10.8,
+      "85025": 10.2, "80053": 13.8, "81001": 15.2, "82947": 13.2, "85610": 14.5,
+      "12001": 4.5, "29125": 7.2, "36415": 15.0, "96372": 7.8, "94640": 7.5
+    },
+    // Category-level state averages (gross_charge ÷ medicare_rate)
+    byCategory: {
+      facility: { stateAvg: 4.7, nationalMedian: 4.2, percentile75: 5.5 },
+      imaging: { stateAvg: 10.8, nationalMedian: 9.5, percentile75: 13.0 },
+      lab: { stateAvg: 13.4, nationalMedian: 11.0, percentile75: 16.0 },
+      procedure: { stateAvg: 8.4, nationalMedian: 7.2, percentile75: 10.5 }
+    }
+  },
+
+  // National percentile thresholds for markup ratios
+  nationalPercentiles: {
+    p25: 3.0, p50: 5.5, p75: 9.0, p90: 14.0, p95: 18.0
   }
 };

@@ -5,211 +5,444 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description"
-    content="ER Bill Explainer — Understand your emergency room bill, compare prices, simulate insurance plans, and detect overcharges with AI-powered insights.">
-  <title>ER Bill Explainer — Healthcare Price Transparency</title>
+    content="Upload your ER bill to get personalized insights, Medicare comparisons, and a negotiation action plan.">
+  <title>ER Bill Explainer — Healthcare Pricing Intelligence</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 
 <body>
-  <div class="app-container">
 
-    <!-- Header -->
-    <header class="header">
-      <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark theme">🌙</button>
-      <h1>🏥 ER Bill Explainer</h1>
-      <p class="subtitle">Healthcare Price Transparency — Powered by Real Hospital Data</p>
-      <div class="badge-row">
-        <span class="badge">📊 20 ER Services</span>
-        <span class="badge">🏛️ Inova Alexandria Hospital</span>
-        <span class="badge">💡 CMS Medicare Benchmarks</span>
+  <!-- Navigation Bar -->
+  <nav class="navbar" id="navbar">
+    <div class="nav-inner">
+      <a href="#" class="nav-brand">
+        <span class="nav-logo">🏥</span>
+        <span class="nav-title">ER Bill Explainer</span>
+      </a>
+      <div class="nav-links" id="nav-links" style="display:none">
+        <button class="nav-link active" data-tab="dashboard" aria-current="page">Dashboard</button>
+        <button class="nav-link" data-tab="services">Services</button>
+        <button class="nav-link" data-tab="compare">Compare</button>
+        <button class="nav-link" data-tab="simulator">Simulator</button>
+        <button class="nav-link" data-tab="action-plan">Action Plan</button>
       </div>
-    </header>
+      <div class="nav-actions">
+        <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">🌙</button>
+        <button class="nav-hamburger" id="nav-hamburger" aria-label="Menu" style="display:none">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
 
-    <!-- Tab Navigation -->
-    <nav class="tab-bar" id="tab-bar">
-      <button class="tab-btn active" data-tab="bill-explained">📊 Bill Explained</button>
-      <button class="tab-btn" data-tab="cost-breakdown">📋 Cost Breakdown</button>
-      <button class="tab-btn" data-tab="price-comparison">📈 Price Comparison</button>
-      <button class="tab-btn" data-tab="insights">🔍 Insights</button>
-      <button class="tab-btn" data-tab="explain-bill">🧠 Explain My Bill</button>
-      <button class="tab-btn" data-tab="what-if">💰 What If Simulator</button>
-      <button class="tab-btn" data-tab="red-flags">🚩 Red Flags</button>
-    </nav>
+  <!-- Mobile Nav Overlay -->
+  <div class="mobile-nav-overlay" id="mobile-nav-overlay">
+    <button class="mobile-nav-link active" data-tab="dashboard">📊 Dashboard</button>
+    <button class="mobile-nav-link" data-tab="services">🧾 Services</button>
+    <button class="mobile-nav-link" data-tab="compare">⚖️ Compare</button>
+    <button class="mobile-nav-link" data-tab="simulator">💰 Simulator</button>
+    <button class="mobile-nav-link" data-tab="action-plan">🎯 Action Plan</button>
+  </div>
 
-    <!-- Scenario Controls (visible on Bill Explained & What If) -->
-    <div class="controls-bar" id="scenario-controls">
-      <h3>⚙️ Patient Responsibility Scenario</h3>
-      <div class="controls-grid">
-        <div class="control-group">
-          <label>ER Copay ($)</label>
-          <input type="range" id="copay-slider" min="0" max="500" step="50" value="250">
-          <div class="range-value" id="copay-value">$250</div>
+  <!-- ============================================================ -->
+  <!-- LANDING VIEW — visible by default                             -->
+  <!-- ============================================================ -->
+  <div id="landing-view">
+
+    <!-- Hero Section — Original with counters -->
+    <section class="hero" id="hero">
+      <div class="hero-content">
+        <div class="hero-badge">✨ Healthcare Price Transparency Platform</div>
+        <h1>Know What You Owe. <span class="hero-gradient">Take Action.</span></h1>
+        <p class="hero-subtitle">We analyze your ER charges against Medicare benchmarks, score your negotiation
+          leverage,
+          and give you a step-by-step action plan.</p>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <div class="hero-stat-value" id="hero-count-bills">0</div>
+            <div class="hero-stat-label">Bills Analyzed</div>
+          </div>
+          <div class="hero-stat-divider"></div>
+          <div class="hero-stat">
+            <div class="hero-stat-value hero-green" id="hero-count-people">0</div>
+            <div class="hero-stat-label">People Helped</div>
+          </div>
+          <div class="hero-stat-divider"></div>
+          <div class="hero-stat">
+            <div class="hero-stat-value hero-gold" id="hero-count-saved">$0</div>
+            <div class="hero-stat-label">Total Saved</div>
+          </div>
         </div>
-        <div class="control-group">
-          <label>Deductible Remaining ($)</label>
-          <input type="range" id="deductible-slider" min="0" max="5000" step="100" value="500">
-          <div class="range-value" id="deductible-value">$500</div>
+        <div class="hero-trust">
+          <span class="trust-badge"><span class="badge-dot"></span> CMS Medicare Data</span>
+          <span class="trust-badge"><span class="badge-dot"></span> No Data Stored</span>
+          <span class="trust-badge"><span class="badge-dot"></span> HIPAA-Exempt</span>
         </div>
-        <div class="control-group">
-          <label>Coinsurance (%)</label>
-          <input type="range" id="coinsurance-slider" min="0" max="50" step="5" value="20">
-          <div class="range-value" id="coinsurance-value">20%</div>
+      </div>
+      <div class="hero-wave">
+        <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+          <path d="M0 60C240 120 480 0 720 60C960 120 1200 0 1440 60V120H0V60Z" fill="var(--bg)" />
+        </svg>
+      </div>
+    </section>
+
+    <!-- Upload CTA Section -->
+    <section class="upload-section">
+      <div class="container">
+        <h2 class="upload-heading">Upload Your ER Bill to See Personalized Insights</h2>
+        <p class="upload-subtext">We'll break down your charges, compare them to Medicare benchmarks,
+          and identify potential overpricing.</p>
+        <div class="upload-cta-group">
+          <label for="bill-upload" class="upload-cta-btn" tabindex="0">
+            <span class="upload-icon">📤</span>
+            <span class="upload-text">Upload PDF or Image</span>
+            <span class="upload-hint">Drag & drop or click to browse</span>
+          </label>
+          <input type="file" id="bill-upload" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden>
+          <button class="demo-btn" id="demo-btn" onclick="startDemo()">
+            ▶ Try Demo Report
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Blurred Preview Cards -->
+    <section class="preview-section">
+      <div class="container">
+        <h2 class="preview-heading">What You'll Get</h2>
+        <p class="preview-subheading">Upload your bill to unlock personalized insights</p>
+        <div class="preview-grid">
+          <div class="preview-card">
+            <div class="preview-card-inner">
+              <div class="preview-icon">🎯</div>
+              <h3>Negotiation Score</h3>
+              <p>See your leverage for negotiating a lower bill based on Medicare benchmarks</p>
+              <div class="preview-mock">
+                <div class="mock-bar" style="width:75%;background:#22c55e"></div>
+                <div class="mock-bar" style="width:45%;background:#f59e0b"></div>
+                <div class="mock-bar" style="width:90%;background:#ef4444"></div>
+              </div>
+            </div>
+            <div class="preview-lock">🔒 Insights unlock after upload</div>
+          </div>
+          <div class="preview-card">
+            <div class="preview-card-inner">
+              <div class="preview-icon">📊</div>
+              <h3>Cost Breakdown</h3>
+              <p>Understand exactly where your money goes with service-level detail</p>
+              <div class="preview-mock">
+                <div class="mock-bar" style="width:85%;background:#0891b2"></div>
+                <div class="mock-bar" style="width:60%;background:#0891b2"></div>
+                <div class="mock-bar" style="width:35%;background:#0891b2"></div>
+              </div>
+            </div>
+            <div class="preview-lock">🔒 Insights unlock after upload</div>
+          </div>
+          <div class="preview-card">
+            <div class="preview-card-inner">
+              <div class="preview-icon">⚖️</div>
+              <h3>Medicare Comparison</h3>
+              <p>Compare each charge against what Medicare would actually pay</p>
+              <div class="preview-mock">
+                <div class="mock-bar" style="width:95%;background:#ef4444"></div>
+                <div class="mock-bar" style="width:30%;background:#22c55e"></div>
+                <div class="mock-bar" style="width:70%;background:#f59e0b"></div>
+              </div>
+            </div>
+            <div class="preview-lock">🔒 Insights unlock after upload</div>
+          </div>
+          <div class="preview-card">
+            <div class="preview-card-inner">
+              <div class="preview-icon">💰</div>
+              <h3>Insurance Simulator</h3>
+              <p>Model your out-of-pocket costs under different insurance plans</p>
+              <div class="preview-mock">
+                <div class="mock-bar" style="width:50%;background:#7c3aed"></div>
+                <div class="mock-bar" style="width:70%;background:#7c3aed"></div>
+                <div class="mock-bar" style="width:25%;background:#7c3aed"></div>
+              </div>
+            </div>
+            <div class="preview-lock">🔒 Insights unlock after upload</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trust & Credibility Section -->
+    <section class="trust-section">
+      <div class="container">
+        <h2 class="trust-heading">Built on Trusted Data</h2>
+        <div class="trust-grid">
+          <div class="trust-item">
+            <div class="trust-item-icon">🏛️</div>
+            <h4>CMS Medicare Benchmarks</h4>
+            <p>We benchmark against official CMS Medicare reimbursement rates — the standard for fair pricing.</p>
+          </div>
+          <div class="trust-item">
+            <div class="trust-item-icon">🏥</div>
+            <h4>Hospital Price Files</h4>
+            <p>Data sourced from hospital machine-readable files required by the Price Transparency Rule.</p>
+          </div>
+          <div class="trust-item">
+            <div class="trust-item-icon">🔒</div>
+            <h4>Your Privacy, Protected</h4>
+            <p>We don't store your bill data. Analysis happens in real-time and nothing is saved on our servers.</p>
+          </div>
+          <div class="trust-item">
+            <div class="trust-item-icon">⚕️</div>
+            <h4>HIPAA Disclaimer</h4>
+            <p>This tool is for educational purposes only. No patient health data is collected, stored, or transmitted.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- PROCESSING OVERLAY — shown during analysis                    -->
+  <!-- ============================================================ -->
+  <div id="processing-view" style="display:none">
+    <div class="processing-overlay">
+      <div class="processing-content">
+        <div class="processing-spinner"></div>
+        <h2 class="processing-title">Analyzing Your Bill</h2>
+        <div class="processing-steps">
+          <div class="processing-step active" id="proc-step-1">
+            <span class="proc-icon">🔍</span>
+            <span>Analyzing CPT codes…</span>
+          </div>
+          <div class="processing-step" id="proc-step-2">
+            <span class="proc-icon">📊</span>
+            <span>Benchmarking against Medicare…</span>
+          </div>
+          <div class="processing-step" id="proc-step-3">
+            <span class="proc-icon">⚠️</span>
+            <span>Identifying pricing anomalies…</span>
+          </div>
+        </div>
+        <div class="processing-progress">
+          <div class="processing-bar" id="processing-bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- RESULTS VIEW — hidden until upload or demo                    -->
+  <!-- ============================================================ -->
+  <div id="results-view" style="display:none">
+
+    <!-- Progress Indicator -->
+    <div class="progress-bar-container">
+      <div class="progress-steps">
+        <div class="progress-step active" data-tab="dashboard">
+          <div class="step-dot">1</div>
+          <div class="step-label">Review</div>
+        </div>
+        <div class="progress-connector"></div>
+        <div class="progress-step" data-tab="services">
+          <div class="step-dot">2</div>
+          <div class="step-label">Details</div>
+        </div>
+        <div class="progress-connector"></div>
+        <div class="progress-step" data-tab="compare">
+          <div class="step-dot">3</div>
+          <div class="step-label">Compare</div>
+        </div>
+        <div class="progress-connector"></div>
+        <div class="progress-step" data-tab="simulator">
+          <div class="step-dot">4</div>
+          <div class="step-label">Simulate</div>
+        </div>
+        <div class="progress-connector"></div>
+        <div class="progress-step" data-tab="action-plan">
+          <div class="step-dot">5</div>
+          <div class="step-label">Act</div>
         </div>
       </div>
     </div>
 
-    <!-- Tab 1: Bill Explained -->
-    <section class="tab-content active" id="tab-bill-explained">
-      <div class="kpi-grid" id="kpi-cards"></div>
-      <div class="chart-grid three-col">
-        <div class="chart-card" id="waterfall-chart"></div>
-        <div class="chart-card" id="pie-chart"></div>
-      </div>
-    </section>
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="container">
 
-    <!-- Tab 2: Cost Breakdown -->
-    <section class="tab-content" id="tab-cost-breakdown">
-      <div class="chart-grid two-col">
-        <div class="chart-card" id="variance-bar-chart"></div>
-        <div class="chart-card" id="category-bar-chart"></div>
-      </div>
-      <div class="chart-grid three-col">
-        <div class="chart-card" id="cumulative-chart"></div>
-        <div class="chart-card" id="category-pie-chart"></div>
-      </div>
-      <div class="glass-card mt-12">
-        <h3>📋 Detailed Service Comparison</h3>
-        <div class="data-table-wrapper" id="service-table-wrapper"></div>
-      </div>
-    </section>
+        <!-- Tab: Dashboard -->
+        <section class="tab-panel active" id="panel-dashboard">
 
-    <!-- Tab 3: Price Comparison -->
-    <section class="tab-content" id="tab-price-comparison">
-      <div class="chart-grid single">
-        <div class="chart-card" id="scatter-chart"></div>
-      </div>
-      <div class="chart-grid two-col">
-        <div class="chart-card" id="histogram-chart"></div>
-        <div class="chart-card" id="box-chart"></div>
-      </div>
-      <div class="chart-grid single">
-        <div class="chart-card" id="service-count-chart"></div>
-      </div>
-    </section>
+          <!-- 1. Negotiation Score -->
+          <div class="negotiation-score-card" id="negotiation-score"></div>
 
-    <!-- Tab 4: Insights -->
-    <section class="tab-content" id="tab-insights">
-      <div id="insights-content"></div>
-    </section>
+          <!-- 2. Where Your Money Goes (Category Breakdown) -->
+          <div class="card section-card" id="category-section"></div>
 
-    <!-- Tab 5: Explain My Bill (NEW) -->
-    <section class="tab-content" id="tab-explain-bill">
-      <div class="glass-card mb-24">
-        <h3>🧠 Select Services on Your Bill</h3>
-        <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
-          Check the services that appear on your ER bill. We'll generate a plain-English explanation for each one.
-        </p>
-        <div class="service-selector" id="service-selector"></div>
-        <button class="btn btn-primary mt-12" id="explain-btn" onclick="generateExplanations()">
-          Generate Bill Explanation
-        </button>
-      </div>
-      <div id="explanation-summary" class="hidden"></div>
-      <div id="explanation-cards"></div>
-    </section>
+          <!-- 3. Top 5 Highest Cost Services -->
+          <div class="card section-card" id="top-cost-section"></div>
 
-    <!-- Tab 6: What If Simulator (NEW) -->
-    <section class="tab-content" id="tab-what-if">
-      <div class="glass-card mb-24">
-        <h3>💰 Choose a Plan to Compare</h3>
-        <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
-          Select a plan preset or customize parameters to see how your costs change.
-        </p>
-        <div class="plan-cards" id="plan-cards"></div>
-        <div class="controls-grid" style="margin-top: 20px;">
-          <div class="control-group">
-            <label>Deductible ($)</label>
-            <input type="range" id="wif-deductible" min="0" max="10000" step="250" value="4000">
-            <div class="range-value" id="wif-deductible-value">$4,000</div>
+          <!-- 4. How Aggressive Are These Prices? (Markup) -->
+          <div class="card section-card" id="markup-section"></div>
+
+          <!-- 5. Most Overpriced Services -->
+          <!-- <div class="card section-card" id="overpriced-section"></div> -->
+
+          <!-- 6. What This Means For You -->
+          <div class="card section-card" id="insights-section"></div>
+
+        </section>
+
+        <!-- Tab: Services -->
+        <section class="tab-panel" id="panel-services">
+          <div class="panel-header">
+            <h2>🧾 Service-by-Service Breakdown</h2>
+            <p>Ranked by markup ratio — highest overcharges first</p>
           </div>
-          <div class="control-group">
-            <label>Coinsurance (%)</label>
-            <input type="range" id="wif-coinsurance" min="0" max="50" step="5" value="30">
-            <div class="range-value" id="wif-coinsurance-value">30%</div>
+          <div class="filter-pills" id="category-filters"></div>
+          <div class="service-cards" id="service-cards"></div>
+        </section>
+
+        <!-- Tab: Compare -->
+        <section class="tab-panel" id="panel-compare">
+          <div class="panel-header">
+            <h2>⚖️ How Does This Hospital Compare?</h2>
+            <p>Inova Alexandria vs Virginia state averages and national benchmarks</p>
           </div>
-          <div class="control-group">
-            <label>Copay ($)</label>
-            <input type="range" id="wif-copay" min="0" max="500" step="25" value="150">
-            <div class="range-value" id="wif-copay-value">$150</div>
+          <div id="hospital-comparison"></div>
+          <div id="variance-analysis"></div>
+        </section>
+
+        <!-- Tab: Simulator -->
+        <section class="tab-panel" id="panel-simulator">
+          <div class="panel-header">
+            <h2>💰 Insurance Plan Simulator</h2>
+            <p>See your out-of-pocket cost under different insurance plans</p>
           </div>
-          <div class="control-group">
-            <label>OOP Maximum ($)</label>
-            <input type="range" id="wif-oopmax" min="1000" max="20000" step="500" value="9100">
-            <div class="range-value" id="wif-oopmax-value">$9,100</div>
-          </div>
-          <div class="control-group">
-            <label>Network</label>
-            <div class="toggle-container">
-              <span style="color: var(--text-secondary); font-size: 0.85rem;">In-Network</span>
-              <label class="toggle">
-                <input type="checkbox" id="wif-oon-toggle">
-                <span class="toggle-slider"></span>
-              </label>
-              <span style="color: var(--text-secondary); font-size: 0.85rem;">Out-of-Network</span>
+          <div class="plan-cards" id="plan-cards"></div>
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-header">
+              <h3>🎛️ Customize Your Plan</h3>
+            </div>
+            <div class="controls-grid">
+              <div class="control-group">
+                <label for="wif-deductible">Deductible</label>
+                <input type="range" id="wif-deductible" min="0" max="10000" step="250" value="4000">
+                <div class="range-value" id="wif-deductible-value">$4,000</div>
+              </div>
+              <div class="control-group">
+                <label for="wif-coinsurance">Coinsurance</label>
+                <input type="range" id="wif-coinsurance" min="0" max="50" step="5" value="30">
+                <div class="range-value" id="wif-coinsurance-value">30%</div>
+              </div>
+              <div class="control-group">
+                <label for="wif-copay">Copay</label>
+                <input type="range" id="wif-copay" min="0" max="500" step="25" value="150">
+                <div class="range-value" id="wif-copay-value">$150</div>
+              </div>
+              <div class="control-group">
+                <label for="wif-oopmax">Out-of-Pocket Max</label>
+                <input type="range" id="wif-oopmax" min="1000" max="20000" step="500" value="9100">
+                <div class="range-value" id="wif-oopmax-value">$9,100</div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-      <div class="kpi-grid" id="wif-kpis"></div>
-      <div class="chart-grid two-col">
-        <div class="chart-card" id="wif-comparison-chart"></div>
-        <div class="chart-card" id="wif-gauge-chart"></div>
-      </div>
-      <div class="glass-card mt-12">
-        <h3>📊 Side-by-Side Plan Comparison</h3>
-        <div class="data-table-wrapper" id="wif-table-wrapper"></div>
-      </div>
-    </section>
+          <div id="sim-recommendation" class="recommendation-card" style="display:none"></div>
+          <div class="sim-results" id="sim-results"></div>
+          <!-- <div class="card" id="stacked-bar-section">
+            <div class="card-header">
+              <h3>How Your Payment Breaks Down</h3>
+            </div>
+            <div class="stacked-bar" id="stacked-bar"></div>
+            <div class="stacked-legend" id="stacked-legend"></div>
+          </div> -->
+        </section>
 
-    <!-- Tab 7: Red Flags (NEW) -->
-    <section class="tab-content" id="tab-red-flags">
-      <div class="controls-bar">
-        <h3>🎚️ Detection Thresholds</h3>
-        <div class="controls-grid">
-          <div class="control-group">
-            <label>Medicare Multiplier Threshold</label>
-            <input type="range" id="rf-medicare-threshold" min="1" max="15" step="0.5" value="5">
-            <div class="range-value" id="rf-medicare-value">5.0x</div>
+        <!-- Tab: Action Plan -->
+        <section class="tab-panel" id="panel-action-plan">
+          <div class="panel-header">
+            <h2>🎯 Your Action Plan</h2>
+            <p>Concrete steps to understand and potentially reduce your bill</p>
           </div>
-          <div class="control-group">
-            <label>Negotiated Variance (%)</label>
-            <input type="range" id="rf-variance-threshold" min="50" max="500" step="25" value="200">
-            <div class="range-value" id="rf-variance-value">200%</div>
+
+          <!-- AI Bill Explanation -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-header">
+              <h3>🤖 AI Bill Explanation (Powered by Gemini)</h3>
+              <p>Paste your entire ER bill text below and our AI will explain every charge in plain English</p>
+            </div>
+            <textarea id="bill-text-input" class="bill-textarea" rows="6"
+              placeholder="Paste your ER bill text here...&#10;&#10;Example:&#10;ER Visit Level 4 (CPT 99284)    $1,892.00&#10;CBC w/ Differential (CPT 85025)  $187.50&#10;Chest X-ray 2 views (CPT 71046)  $423.00"></textarea>
+            <div class="ai-actions">
+              <button class="entry-analyze-btn" id="ai-explain-btn" onclick="explainBillWithAI()">
+                ✨ Explain My Bill with AI
+              </button>
+              <span class="ai-disclaimer">🔒 Your data is sent securely to Google Gemini and is not stored</span>
+            </div>
+            <div id="ai-explanation-result" class="ai-result" style="display:none"></div>
           </div>
-        </div>
-      </div>
-      <div class="alert-banner" id="rf-alert-banner"></div>
-      <div id="rf-flag-cards"></div>
-      <div class="chart-grid single mt-12">
-        <div class="chart-card" id="rf-scatter-chart"></div>
-      </div>
-      <div class="glass-card mt-12">
-        <h3>📋 All Flagged Services</h3>
-        <div class="data-table-wrapper" id="rf-table-wrapper"></div>
-      </div>
-    </section>
 
-    <!-- Footer -->
-    <footer class="footer">
-      <p>Data Sources:
-        <a href="https://www.inova.org/price-transparency" target="_blank">Inova Alexandria Hospital MRF</a> |
-        <a href="https://www.cms.gov" target="_blank">CMS Medicare Benchmarks</a>
-      </p>
-      <p style="margin-top: 6px;">ER Bill Explainer — Healthcare Price Transparency Dashboard</p>
-    </footer>
+          <!-- Negotiation Letter -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-header">
+              <h3>📝 Negotiation Letter Template</h3>
+              <p>Download a pre-filled letter to send to the hospital billing department</p>
+            </div>
+            <div id="negotiation-letter"></div>
+            <button class="action-btn primary-btn" onclick="downloadNegotiationLetter()">📄 Download Letter as
+              PDF</button>
+          </div>
 
+          <!-- Dispute Checklist -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-header">
+              <h3>✅ Dispute Checklist</h3>
+              <p>Follow these steps to challenge your bill</p>
+            </div>
+            <div id="dispute-checklist"></div>
+          </div>
+
+          <!-- Talking Points -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-header">
+              <h3>📞 Call Talking Points</h3>
+              <p>Use these scripted phrases when calling the billing department</p>
+            </div>
+            <div id="talking-points"></div>
+          </div>
+
+          <!-- Data Methodology -->
+          <div class="card">
+            <div class="card-header">
+              <h3>📚 Data Methodology</h3>
+              <p>How we calculate benchmarks and what the numbers mean</p>
+            </div>
+            <div id="data-methodology"></div>
+          </div>
+
+        </section>
+
+      </div>
+    </main>
   </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="nav-logo">🏥</span>
+          <span>ER Bill Explainer</span>
+        </div>
+        <p>Data Sources:
+          <a href="https://www.inova.org/price-transparency" target="_blank" rel="noopener">Inova Alexandria Hospital
+            MRF</a> ·
+          <a href="https://www.cms.gov" target="_blank" rel="noopener">CMS Medicare Benchmarks</a>
+        </p>
+        <p class="footer-disclaimer">⚠️ This tool is for educational and informational purposes only. It does not
+          constitute medical or legal advice. Consult your insurer for exact benefits. Not a substitute for professional
+          billing review. No patient health data is collected, stored, or transmitted — this tool is HIPAA-exempt.</p>
+      </div>
+    </div>
+  </footer>
 
   <script src="data.js"></script>
   <script src="app.js"></script>
